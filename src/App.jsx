@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
-import { db } from './firebase';
+import { db, auth } from './firebase';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { signOut } from 'firebase/auth';
 import Dashboard from './pages/Dashboard';
 import Products from './pages/Products';
 import Sales from './pages/Sales';
@@ -16,9 +17,62 @@ import Tutorial from './pages/Tutorial';
 
 function PrivateRoute({ children }) {
   const { currentUser } = useAuth();
-  
+  const [hasValidSubscription, setHasValidSubscription] = useState(true);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const checkSubscription = async () => {
+      if (!currentUser?.id) return;
+
+      try {
+        const userDoc = await getDoc(doc(db, 'userAuth', currentUser.id));
+        if (!userDoc.exists()) return;
+
+        const sub = userDoc.data().subscription;
+        if (!sub) {
+          setHasValidSubscription(false);
+          return;
+        }
+
+        setHasValidSubscription(sub.days > 0);
+      } catch (error) {
+        console.error('خطا در بررسی اشتراک:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    checkSubscription();
+  }, [currentUser]);
+
   if (!currentUser) {
     return <Navigate to="/login" />;
+  }
+
+  if (loading) {
+    return <div>در حال بارگذاری...</div>;
+  }
+
+  if (!hasValidSubscription) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="bg-white p-8 rounded-xl shadow-sm max-w-md w-full text-center">
+          <div className="text-red-500 text-5xl mb-4">
+            <i className="fas fa-exclamation-circle"></i>
+          </div>
+          <h1 className="text-2xl font-bold text-gray-800 mb-4">اشتراک شما به پایان رسیده است</h1>
+          <p className="text-gray-600 mb-6">
+            لطفاً با پشتیبانی تماس بگیرید تا اشتراک شما تمدید شود.
+          </p>
+          <button
+            onClick={() => signOut(auth)}
+            className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >
+            خروج از حساب
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (

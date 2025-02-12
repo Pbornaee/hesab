@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { auth } from '../firebase';
 import { signOut } from 'firebase/auth';
+import SubscriptionStatus from './SubscriptionStatus';
 
 function Sidebar() {
   const [isOpen, setIsOpen] = useState(false);
@@ -67,6 +68,10 @@ function Sidebar() {
               <i className="fas fa-calculator text-lg"></i>
               <span className="font-medium">حسابداری فروشگاه</span>
             </div>
+          </div>
+
+          <div className="mb-6">
+            <SubscriptionStatus />
           </div>
 
           <nav className="space-y-1">

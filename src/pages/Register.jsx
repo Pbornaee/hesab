@@ -25,16 +25,19 @@ function Register() {
         return;
       }
 
-      // ایجاد داکیومنت جدید در userAuth
+      // ایجاد داکیومنت جدید در userAuth با اضافه کردن subscription
       const authDoc = doc(collection(db, 'userAuth'));
       await setDoc(authDoc, {
         username: normalizedUsername,
         password,
         storeName,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        subscription: {
+          days: 30 // اشتراک 30 روزه اولیه
+        }
       });
 
-      // ایجاد داکیومنت در users برای داده‌های اصلی
+      // ایجاد داکیومنت در users برای داده‌های اصلی (بدون subscription)
       await setDoc(doc(db, 'users', authDoc.id), {
         username: normalizedUsername,
         storeName,
