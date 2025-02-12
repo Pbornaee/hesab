@@ -12,6 +12,7 @@ import Expenses from './pages/Expenses';
 import Accounting from './pages/Accounting';
 import Login from './pages/Login';
 import Register from './pages/Register';
+import Tutorial from './pages/Tutorial';
 
 function PrivateRoute({ children }) {
   const { currentUser } = useAuth();
@@ -178,6 +179,11 @@ function AppContent() {
                 expenses={expenses}
                 stockLogs={stockLogs}
               />
+            </PrivateRoute>
+          } />
+          <Route path="/tutorial" element={
+            <PrivateRoute>
+              <Tutorial />
             </PrivateRoute>
           } />
         </Routes>

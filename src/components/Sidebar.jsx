@@ -19,6 +19,7 @@ function Sidebar() {
     { path: '/new-stock', icon: 'box', label: 'بار جدید' },
     { path: '/expenses', icon: 'credit-card', label: 'هزینه‌ها' },
     { path: '/accounting', icon: 'calculator', label: 'حساب و کتاب' },
+    { path: '/tutorial', icon: 'question-circle', label: 'راهنما' },
   ];
 
   const handleLogout = async () => {
