@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { db } from '../firebase';
 import { doc, getDoc } from 'firebase/firestore';
@@ -8,18 +8,23 @@ function Sales({ products, setProducts, todaySales, setTodaySales, salesArchive,
   const [showSaleForm, setShowSaleForm] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [newSale, setNewSale] = useState({
-    quantity: '',
-    salePrice: '',
-    discount: '0',
+    productId: '',
+    quantity: 1,
+    price: '',
+    discount: 0,
+    customerName: ''
   });
   const [isProductDropdownOpen, setIsProductDropdownOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('today');
-  const [selectedDate, setSelectedDate] = useState('all');
-  const [availableDates, setAvailableDates] = useState([]);
-  const [isDateDropdownOpen, setIsDateDropdownOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const isProcessing = useRef(false);
+  const [editingSale, setEditingSale] = useState(null);
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [archiveSearchQuery, setArchiveSearchQuery] = useState('');
 
   // تبدیل اعداد به فارسی
   const toPersianNumber = (num) => {
@@ -42,83 +47,158 @@ function Sales({ products, setProducts, todaySales, setTodaySales, salesArchive,
     const { name, value } = e.target;
     let newValue = value;
 
-    // تبدیل اعداد فارسی به انگلیسی
-    newValue = value.replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d));
-    
-    if (!/^\d*\.?\d{0,2}$/.test(newValue)) return;
+    // فقط برای فیلدهای عددی تبدیل انجام بشه
+    if (name === 'quantity' || name === 'price' || name === 'discount') {
+      // تبدیل اعداد فارسی به انگلیسی
+      newValue = value.replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d));
+      if (!/^\d*\.?\d{0,2}$/.test(newValue)) return;
+    }
 
     setNewSale(prev => ({ ...prev, [name]: newValue }));
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!selectedProduct || !newSale.quantity || !newSale.salePrice) {
+    if (isProcessing.current) return;
+
+    if (!selectedProduct || !newSale.quantity || !newSale.price) {
       alert('لطفاً همه فیلدهای ضروری را پر کنید');
       return;
     }
 
     try {
+      setIsSubmitting(true);
+
       const quantity = parseFloat(newSale.quantity);
-      const totalStock = selectedProduct.variants.reduce((total, v) => total + v.stock, 0);
       
-      if (quantity > totalStock) {
-        alert('موجودی کافی نیست');
-        return;
+      if (editingSale) {
+        // 1. برگرداندن موجودی قبلی به محصول
+        const oldSale = todaySales.find(s => s.id === editingSale.id);
+        const oldProduct = products.find(p => p.id === oldSale.productId);
+        
+        // برگرداندن موجودی به اولین واریانت
+        const updatedOldVariants = [...oldProduct.variants];
+        updatedOldVariants[0].stock += oldSale.quantity;
+
+        await setProducts(products.map(p => 
+          p.id === oldProduct.id 
+            ? { ...p, variants: updatedOldVariants }
+            : p
+        ));
+
+        // 2. کم کردن موجودی جدید
+        const totalStock = selectedProduct.variants.reduce((total, v) => total + v.stock, 0);
+        if (quantity > totalStock) {
+          alert('موجودی کافی نیست');
+          return;
+        }
+
+        let remainingQuantity = quantity;
+        let totalPurchaseCost = 0;
+        const updatedVariants = [...selectedProduct.variants]
+          .sort((a, b) => a.purchasePrice - b.purchasePrice)
+          .map(variant => {
+            if (remainingQuantity <= 0) return variant;
+            
+            const quantityToDeduct = Math.min(remainingQuantity, variant.stock);
+            remainingQuantity -= quantityToDeduct;
+            totalPurchaseCost += variant.purchasePrice * quantityToDeduct;
+            
+            return {
+              ...variant,
+              stock: variant.stock - quantityToDeduct
+            };
+          });
+
+        // 3. آپدیت فروش و محصول
+        await Promise.all([
+          setProducts(products.map(p => 
+            p.id === selectedProduct.id 
+              ? { ...p, variants: updatedVariants }
+              : p
+          )),
+          setTodaySales(todaySales.map(s => s.id === editingSale.id ? {
+            id: editingSale.id,
+            productId: selectedProduct.id,
+            productName: selectedProduct.name,
+            quantity,
+            salePrice: parseFloat(newSale.price),
+            discount: parseFloat(newSale.discount || 0),
+            purchaseCost: totalPurchaseCost,
+            customerName: newSale.customerName,
+            timestamp: new Date().toISOString(),
+            total: (quantity * parseFloat(newSale.price)) - parseFloat(newSale.discount || 0)
+          } : s))
+        ]);
+
+        setEditingSale(null);
+        setShowSaleForm(false);
+      } else {
+        // افزودن فروش جدید
+        const totalStock = selectedProduct.variants.reduce((total, v) => total + v.stock, 0);
+        if (quantity > totalStock) {
+          alert('موجودی کافی نیست');
+          return;
+        }
+
+        let remainingQuantity = quantity;
+        let totalPurchaseCost = 0;
+        const updatedVariants = [...selectedProduct.variants]
+          .sort((a, b) => a.purchasePrice - b.purchasePrice)
+          .map(variant => {
+            if (remainingQuantity <= 0) return variant;
+            
+            const quantityToDeduct = Math.min(remainingQuantity, variant.stock);
+            remainingQuantity -= quantityToDeduct;
+            totalPurchaseCost += variant.purchasePrice * quantityToDeduct;
+            
+            return {
+              ...variant,
+              stock: variant.stock - quantityToDeduct
+            };
+          });
+
+        await Promise.all([
+          setTodaySales([{
+            id: Date.now(),
+            productId: selectedProduct.id,
+            productName: selectedProduct.name,
+            quantity,
+            salePrice: parseFloat(newSale.price),
+            discount: parseFloat(newSale.discount || 0),
+            purchaseCost: totalPurchaseCost,
+            customerName: newSale.customerName,
+            timestamp: new Date().toISOString(),
+            total: (quantity * parseFloat(newSale.price)) - parseFloat(newSale.discount || 0)
+          }, ...todaySales]),
+          setProducts(products.map(p => 
+            p.id === selectedProduct.id 
+              ? { ...p, variants: updatedVariants }
+              : p
+          ))
+        ]);
       }
 
-      // کم کردن از موجودی با اولویت قیمت کمتر
-      let remainingQuantity = quantity;
-      let totalPurchaseCost = 0;
-      const updatedVariants = [...selectedProduct.variants]
-        .sort((a, b) => a.purchasePrice - b.purchasePrice)
-        .map(variant => {
-          if (remainingQuantity <= 0) return variant;
-          
-          const quantityToDeduct = Math.min(remainingQuantity, variant.stock);
-          remainingQuantity -= quantityToDeduct;
-          totalPurchaseCost += variant.purchasePrice * quantityToDeduct;
-          
-          return {
-            ...variant,
-            stock: variant.stock - quantityToDeduct
-          };
-        });
-
-      // ثبت فروش
-      const sale = {
-        id: Date.now(),
-        productId: selectedProduct.id,
-        productName: selectedProduct.name,
-        quantity: quantity,
-        salePrice: parseFloat(newSale.salePrice),
-        discount: parseFloat(newSale.discount || 0),
-        purchaseCost: totalPurchaseCost,
-        timestamp: new Date().toISOString(),
-        total: (quantity * parseFloat(newSale.salePrice)) - parseFloat(newSale.discount || 0)
-      };
-
-      // آپدیت همزمان فروش و موجودی
-      await Promise.all([
-        setTodaySales([sale, ...todaySales]),
-        setProducts(products.map(p => 
-          p.id === selectedProduct.id 
-            ? { ...p, variants: updatedVariants }
-            : p
-        ))
-      ]);
-
-      // ریست فرم
-      setNewSale({
-        quantity: '',
-        salePrice: '',
-        discount: '0',
-      });
-      setSelectedProduct(null);
-      setShowSaleForm(false);
+      resetForm();
     } catch (error) {
       console.error('خطا در ثبت فروش:', error);
       alert('خطا در ثبت فروش');
+    } finally {
+      setIsSubmitting(false);
+      isProcessing.current = false;
     }
+  };
+
+  const resetForm = () => {
+    setNewSale({
+      productId: '',
+      quantity: 1,
+      price: '',
+      discount: 0,
+      customerName: ''
+    });
+    setSelectedProduct(null);
+    setEditingSale(null);
   };
 
   // اضافه کردن فیلتر محصولات
@@ -133,44 +213,63 @@ function Sales({ products, setProducts, todaySales, setTodaySales, salesArchive,
     return matchesSearch && matchesCategory && hasStock;
   });
 
-  // آپدیت useEffect برای آرشیو فروش‌ها
-  useEffect(() => {
-    const checkAndArchiveSales = async () => {
-      if (!currentUser || !todaySales.length) return;
+  // تغییر تابع فیلتر آرشیو
+  const filteredArchive = salesArchive.filter(sale => {
+    const saleDate = new Date(sale.timestamp);
+    const matchesDateRange = (!startDate || saleDate >= new Date(startDate)) &&
+                            (!endDate || saleDate <= new Date(endDate));
+    const matchesSearch = !archiveSearchQuery || 
+                         sale.productName.toLowerCase().includes(archiveSearchQuery.toLowerCase()) ||
+                         (sale.customerName && sale.customerName.toLowerCase().includes(archiveSearchQuery.toLowerCase()));
+    
+    return matchesDateRange && matchesSearch;
+  });
 
-      const lastSaleDate = todaySales[0]?.timestamp 
-        ? new Date(todaySales[0].timestamp).toLocaleDateString()
-        : null;
-      
-      const today = new Date().toLocaleDateString();
+  const handleEdit = (sale) => {
+    setShowSaleForm(true);
+    setEditingSale(sale);
+    const product = products.find(p => p.id === sale.productId);
+    setSelectedProduct(product);
+    setNewSale({
+      productId: sale.productId,
+      quantity: sale.quantity.toString(),
+      price: sale.salePrice.toString(),
+      discount: sale.discount.toString(),
+      customerName: sale.customerName || ''
+    });
+  };
 
-      if (lastSaleDate && lastSaleDate !== today) {
-        try {
-          await Promise.all([
-            setSalesArchive([...todaySales, ...salesArchive]),
-            setTodaySales([])
-          ]);
-        } catch (error) {
-          console.error('خطا در آرشیو فروش‌ها:', error);
-        }
-      }
-    };
+  const handleDelete = async (saleId) => {
+    if (!window.confirm('آیا از حذف این فروش اطمینان دارید؟')) return;
 
-    checkAndArchiveSales();
-  }, [currentUser, todaySales, salesArchive]);
+    try {
+      // پیدا کردن فروش
+      const sale = todaySales.find(s => s.id === saleId);
+      if (!sale) return;
 
-  // اضافه کردن useEffect برای استخراج تاریخ‌های موجود
-  useEffect(() => {
-    const dates = [...new Set(salesArchive.map(sale => 
-      new Date(sale.timestamp).toLocaleDateString('fa-IR')
-    ))];
-    setAvailableDates(dates);
-  }, [salesArchive]);
+      // برگرداندن موجودی به محصول
+      const product = products.find(p => p.id === sale.productId);
+      if (!product) return;
 
-  // اضافه کردن فیلتر تاریخ
-  const filteredArchive = salesArchive.filter(sale => 
-    selectedDate === 'all' || new Date(sale.timestamp).toLocaleDateString('fa-IR') === selectedDate
-  );
+      const updatedVariants = [...product.variants];
+      // اضافه کردن به موجودی اولین واریانت
+      updatedVariants[0].stock += sale.quantity;
+
+      // آپدیت همزمان محصول و حذف فروش
+      await Promise.all([
+        setProducts(products.map(p => 
+          p.id === product.id 
+            ? { ...p, variants: updatedVariants }
+            : p
+        )),
+        setTodaySales(todaySales.filter(s => s.id !== saleId))
+      ]);
+
+    } catch (error) {
+      console.error('خطا در حذف فروش:', error);
+      alert('خطا در حذف فروش');
+    }
+  };
 
   return (
     <div className="lg:p-6 p-4 max-w-7xl mx-auto mt-16 lg:mt-0">
@@ -183,7 +282,18 @@ function Sales({ products, setProducts, todaySales, setTodaySales, salesArchive,
           </p>
         </div>
         <button
-          onClick={() => setShowSaleForm(true)}
+          onClick={() => {
+            setEditingSale(null);
+            setNewSale({
+              productId: '',
+              quantity: 1,
+              price: '',
+              discount: 0,
+              customerName: ''
+            });
+            setSelectedProduct(null);
+            setShowSaleForm(true);
+          }}
           className="w-full sm:w-40 bg-blue-600 hover:bg-blue-700 text-white h-12 rounded-lg flex items-center justify-center gap-2 transition-colors"
         >
           <i className="fas fa-plus"></i>
@@ -221,9 +331,14 @@ function Sales({ products, setProducts, todaySales, setTodaySales, salesArchive,
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
               <div className="bg-white rounded-xl p-6 w-full max-w-md">
                 <div className="flex justify-between items-center mb-6">
-                  <h2 className="text-xl font-bold text-gray-800">ثبت فروش جدید</h2>
+                  <h2 className="text-xl font-bold text-gray-800">
+                    {editingSale ? 'ویرایش فروش' : 'ثبت فروش جدید'}
+                  </h2>
                   <button
-                    onClick={() => setShowSaleForm(false)}
+                    onClick={() => {
+                      setShowSaleForm(false);
+                      setEditingSale(null);
+                    }}
                     className="text-gray-400 hover:text-gray-600"
                   >
                     <i className="fas fa-times"></i>
@@ -335,7 +450,7 @@ function Sales({ products, setProducts, todaySales, setTodaySales, salesArchive,
                                     const lowestPrice = Math.min(...product.variants.filter(v => v.stock > 0).map(v => v.purchasePrice));
                                     setNewSale(prev => ({
                                       ...prev,
-                                      salePrice: lowestPrice.toString()
+                                      price: lowestPrice.toString()
                                     }));
                                   }}
                                   className={`w-full text-right px-4 py-2.5 text-sm hover:bg-gray-50 flex items-center justify-between
@@ -388,11 +503,11 @@ function Sales({ products, setProducts, todaySales, setTodaySales, salesArchive,
                           </label>
                           <input
                             type="text"
-                            name="salePrice"
-                            value={newSale.salePrice}
+                            name="price"
+                            value={newSale.price}
                             onChange={handleInputChange}
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            placeholder="قیمت فروش را وارد کنید"
+                            placeholder="تومان"
                             dir="ltr"
                           />
                         </div>
@@ -408,7 +523,22 @@ function Sales({ products, setProducts, todaySales, setTodaySales, salesArchive,
                           value={newSale.discount}
                           onChange={handleInputChange}
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder="تومان"
                           dir="ltr"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          نام خریدار (اختیاری)
+                        </label>
+                        <input
+                          type="text"
+                          name="customerName"
+                          value={newSale.customerName}
+                          onChange={handleInputChange}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder="نام خریدار"
                         />
                       </div>
                     </>
@@ -424,9 +554,17 @@ function Sales({ products, setProducts, todaySales, setTodaySales, salesArchive,
                     </button>
                     <button
                       type="submit"
-                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                      disabled={!selectedProduct || isSubmitting}
+                      className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                     >
-                      ثبت فروش
+                      {isSubmitting ? (
+                        <>
+                          <i className="fas fa-spinner fa-spin"></i>
+                          <span>در حال ثبت...</span>
+                        </>
+                      ) : (
+                        <span>{editingSale ? 'ویرایش فروش' : 'ثبت فروش'}</span>
+                      )}
                     </button>
                   </div>
                 </form>
@@ -447,21 +585,33 @@ function Sales({ products, setProducts, todaySales, setTodaySales, salesArchive,
                 <div className="md:hidden">
                   {todaySales.map((sale) => (
                     <div key={sale.id} className="p-4 border-b border-gray-200 last:border-b-0">
-                      <div className="flex justify-between items-start mb-2">
+                      <div className="flex justify-between items-start">
                         <div>
                           <h3 className="font-medium text-gray-900">{sale.productName}</h3>
                           <div className="text-sm text-gray-500 mt-1">
                             <div>تعداد: {toPersianNumber(sale.quantity)}</div>
                             <div>قیمت فروش: {formatPrice(sale.salePrice)}</div>
                             <div>تخفیف: {formatPrice(sale.discount)}</div>
+                            <div>نام خریدار: {sale.customerName || '-'}</div>
                           </div>
                         </div>
-                        <div className="text-sm font-medium text-gray-900">
-                          {formatPrice(sale.total)}
+                        <div>
+                          <div className="text-xs text-gray-500 text-left mb-2">
+                            <div>{new Date(sale.timestamp).toLocaleDateString('fa-IR')}</div>
+                            <div>{new Date(sale.timestamp).toLocaleTimeString('fa-IR')}</div>
+                          </div>
+                          <div className="text-sm font-medium text-gray-900 text-left">
+                            {formatPrice(sale.total)}
+                          </div>
                         </div>
                       </div>
-                      <div className="text-xs text-gray-500 mt-2">
-                        {new Date(sale.timestamp).toLocaleTimeString('fa-IR')}
+                      <div className="flex items-center gap-2 mt-2">
+                        <button onClick={() => handleEdit(sale)} className="text-blue-600 hover:text-blue-700">
+                          <i className="fas fa-edit"></i>
+                        </button>
+                        <button onClick={() => handleDelete(sale.id)} className="text-red-600 hover:text-red-700">
+                          <i className="fas fa-trash"></i>
+                        </button>
                       </div>
                     </div>
                   ))}
@@ -469,34 +619,46 @@ function Sales({ products, setProducts, todaySales, setTodaySales, salesArchive,
 
                 {/* نمایش دسکتاپ */}
                 <div className="hidden md:block">
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">نام محصول</th>
-                          <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">تعداد</th>
-                          <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">قیمت فروش</th>
-                          <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">تخفیف</th>
-                          <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">مجموع</th>
-                          <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">زمان</th>
+                  <table className="w-full">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">نام محصول</th>
+                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">تعداد</th>
+                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">قیمت فروش</th>
+                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">تخفیف</th>
+                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">نام خریدار</th>
+                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">مجموع</th>
+                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">زمان</th>
+                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">عملیات</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {todaySales.map((sale) => (
+                        <tr key={sale.id} className="hover:bg-gray-50">
+                          <td className="px-4 py-3 text-sm text-gray-900">{sale.productName}</td>
+                          <td className="px-4 py-3 text-sm text-gray-900">{toPersianNumber(sale.quantity)}</td>
+                          <td className="px-4 py-3 text-sm text-gray-900">{formatPrice(sale.salePrice)}</td>
+                          <td className="px-4 py-3 text-sm text-gray-900">{formatPrice(sale.discount)}</td>
+                          <td className="px-4 py-3 text-sm text-gray-900">{sale.customerName || '-'}</td>
+                          <td className="px-4 py-3 text-sm text-gray-900">{formatPrice(sale.total)}</td>
+                          <td className="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">
+                            <div>{new Date(sale.timestamp).toLocaleDateString('fa-IR')}</div>
+                            <div>{new Date(sale.timestamp).toLocaleTimeString('fa-IR')}</div>
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-500">
+                            <div className="flex items-center gap-2">
+                              <button onClick={() => handleEdit(sale)} className="text-blue-600 hover:text-blue-700">
+                                <i className="fas fa-edit"></i>
+                              </button>
+                              <button onClick={() => handleDelete(sale.id)} className="text-red-600 hover:text-red-700">
+                                <i className="fas fa-trash"></i>
+                              </button>
+                            </div>
+                          </td>
                         </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-200">
-                        {todaySales.map((sale) => (
-                          <tr key={sale.id} className="hover:bg-gray-50">
-                            <td className="px-4 py-3 text-sm text-gray-900">{sale.productName}</td>
-                            <td className="px-4 py-3 text-sm text-gray-900">{toPersianNumber(sale.quantity)}</td>
-                            <td className="px-4 py-3 text-sm text-gray-900">{formatPrice(sale.salePrice)}</td>
-                            <td className="px-4 py-3 text-sm text-gray-900">{formatPrice(sale.discount)}</td>
-                            <td className="px-4 py-3 text-sm text-gray-900">{formatPrice(sale.total)}</td>
-                            <td className="px-4 py-3 text-sm text-gray-500">
-                              {new Date(sale.timestamp).toLocaleTimeString('fa-IR')}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </>
             )}
@@ -505,60 +667,41 @@ function Sales({ products, setProducts, todaySales, setTodaySales, salesArchive,
       ) : (
         // نمایش آرشیو فروش
         <div className="bg-white rounded-xl shadow-sm">
-          {/* فیلتر تاریخ */}
+          {/* فیلترها */}
           <div className="p-4 border-b border-gray-200">
-            <div className="relative inline-block">
-              <button
-                type="button"
-                onClick={() => setIsDateDropdownOpen(!isDateDropdownOpen)}
-                className="px-4 py-2 text-sm bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent flex items-center gap-2"
-              >
-                <i className="fas fa-calendar text-gray-400"></i>
-                <span>
-                  {selectedDate === 'all' ? 'همه تاریخ‌ها' : selectedDate}
-                </span>
-                <i className={`fas fa-chevron-down transition-transform ${isDateDropdownOpen ? 'rotate-180' : ''}`}></i>
-              </button>
-
-              {isDateDropdownOpen && (
-                <div className="absolute left-0 right-0 mt-1 py-1 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedDate('all');
-                      setIsDateDropdownOpen(false);
-                    }}
-                    className={`w-full text-right px-4 py-2 text-sm hover:bg-gray-50 flex items-center justify-between
-                      ${selectedDate === 'all' ? 'bg-blue-50 text-blue-600' : 'text-gray-700'}`}
-                  >
-                    <span>همه تاریخ‌ها</span>
-                    {selectedDate === 'all' && (
-                      <i className="fas fa-check text-blue-600"></i>
-                    )}
-                  </button>
-                  {availableDates.map(date => (
-                    <button
-                      key={date}
-                      type="button"
-                      onClick={() => {
-                        setSelectedDate(date);
-                        setIsDateDropdownOpen(false);
-                      }}
-                      className={`w-full text-right px-4 py-2 text-sm hover:bg-gray-50 flex items-center justify-between
-                        ${selectedDate === date ? 'bg-blue-50 text-blue-600' : 'text-gray-700'}`}
-                    >
-                      <span>{date}</span>
-                      {selectedDate === date && (
-                        <i className="fas fa-check text-blue-600"></i>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              )}
+            <div className="flex flex-wrap gap-4 mb-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">از تاریخ</label>
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={e => setStartDate(e.target.value)}
+                  className="px-3 py-2 border border-gray-300 rounded-lg"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">تا تاریخ</label>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={e => setEndDate(e.target.value)}
+                  className="px-3 py-2 border border-gray-300 rounded-lg"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">جستجو</label>
+                <input
+                  type="text"
+                  value={archiveSearchQuery}
+                  onChange={e => setArchiveSearchQuery(e.target.value)}
+                  className="px-3 py-2 border border-gray-300 rounded-lg"
+                  placeholder="جستجو در نام محصول یا خریدار..."
+                />
+              </div>
             </div>
 
-            {/* نمایش مجموع فروش تاریخ انتخاب شده */}
-            <div className="mt-2 text-sm text-gray-500">
+            {/* نمایش مجموع فروش */}
+            <div className="text-sm text-gray-500">
               مجموع فروش: {formatPrice(
                 filteredArchive.reduce((total, sale) => total + sale.total, 0)
               )}
@@ -589,8 +732,25 @@ function Sales({ products, setProducts, todaySales, setTodaySales, salesArchive,
                         {formatPrice(sale.total)}
                       </div>
                     </div>
-                    <div className="text-xs text-gray-500 mt-2">
+                    <div className="text-xs text-gray-500">
+                      {new Date(sale.timestamp).toLocaleDateString('fa-IR')}
+                    </div>
+                    <div className="text-xs text-gray-500">
                       {new Date(sale.timestamp).toLocaleTimeString('fa-IR')}
+                    </div>
+                    <div className="flex items-center gap-2 mt-2">
+                      <button
+                        onClick={() => handleEdit(sale)}
+                        className="text-blue-600 hover:text-blue-700"
+                      >
+                        <i className="fas fa-edit"></i>
+                      </button>
+                      <button
+                        onClick={() => handleDelete(sale.id)}
+                        className="text-red-600 hover:text-red-700"
+                      >
+                        <i className="fas fa-trash"></i>
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -608,19 +768,37 @@ function Sales({ products, setProducts, todaySales, setTodaySales, salesArchive,
                         <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">قیمت فروش</th>
                         <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">تخفیف</th>
                         <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">مجموع</th>
+                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">نام خریدار</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200">
                       {filteredArchive.map((sale) => (
                         <tr key={sale.id} className="hover:bg-gray-50">
                           <td className="px-4 py-3 text-sm text-gray-500">
-                            {new Date(sale.timestamp).toLocaleTimeString('fa-IR')}
+                            {new Date(sale.timestamp).toLocaleDateString('fa-IR')}
                           </td>
                           <td className="px-4 py-3 text-sm text-gray-900">{sale.productName}</td>
                           <td className="px-4 py-3 text-sm text-gray-900">{toPersianNumber(sale.quantity)}</td>
                           <td className="px-4 py-3 text-sm text-gray-900">{formatPrice(sale.salePrice)}</td>
                           <td className="px-4 py-3 text-sm text-gray-900">{formatPrice(sale.discount)}</td>
                           <td className="px-4 py-3 text-sm text-gray-900">{formatPrice(sale.total)}</td>
+                          <td className="px-4 py-3 text-sm text-gray-900">{sale.customerName || '-'}</td>
+                          <td className="px-4 py-3 text-sm text-gray-500">
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => handleEdit(sale)}
+                                className="text-blue-600 hover:text-blue-700"
+                              >
+                                <i className="fas fa-edit"></i>
+                              </button>
+                              <button
+                                onClick={() => handleDelete(sale.id)}
+                                className="text-red-600 hover:text-red-700"
+                              >
+                                <i className="fas fa-trash"></i>
+                              </button>
+                            </div>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
