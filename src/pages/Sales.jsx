@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { db } from '../firebase';
 import { doc, getDoc } from 'firebase/firestore';
+import { format, parse, parseISO } from 'date-fns-jalali';
 
 function Sales({ products, setProducts, todaySales, setTodaySales, salesArchive, setSalesArchive }) {
   const { currentUser } = useAuth();
@@ -12,7 +13,10 @@ function Sales({ products, setProducts, todaySales, setTodaySales, salesArchive,
     quantity: 1,
     price: '',
     discount: 0,
-    customerName: ''
+    customerName: '',
+    year: format(new Date(), 'yyyy'),
+    month: format(new Date(), 'MM'),
+    day: format(new Date(), 'dd')
   });
   const [isProductDropdownOpen, setIsProductDropdownOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -22,9 +26,22 @@ function Sales({ products, setProducts, todaySales, setTodaySales, salesArchive,
   const [isSubmitting, setIsSubmitting] = useState(false);
   const isProcessing = useRef(false);
   const [editingSale, setEditingSale] = useState(null);
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  const [startDateFields, setStartDateFields] = useState({
+    year: '',
+    month: '',
+    day: ''
+  });
+  const [endDateFields, setEndDateFields] = useState({
+    year: '',
+    month: '',
+    day: ''
+  });
   const [archiveSearchQuery, setArchiveSearchQuery] = useState('');
+
+  // تابع تبدیل اعداد فارسی به انگلیسی
+  const toEnglishNumber = (str) => {
+    return str.replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d));
+  };
 
   // تبدیل اعداد به فارسی
   const toPersianNumber = (num) => {
@@ -47,11 +64,16 @@ function Sales({ products, setProducts, todaySales, setTodaySales, salesArchive,
     const { name, value } = e.target;
     let newValue = value;
 
-    // فقط برای فیلدهای عددی تبدیل انجام بشه
+    // برای فیلدهای عددی
     if (name === 'quantity' || name === 'price' || name === 'discount') {
       // تبدیل اعداد فارسی به انگلیسی
-      newValue = value.replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d));
+      newValue = toEnglishNumber(value);
       if (!/^\d*\.?\d{0,2}$/.test(newValue)) return;
+    }
+    // برای فیلدهای تاریخ
+    else if (name === 'year' || name === 'month' || name === 'day') {
+      // تبدیل به اعداد فارسی برای نمایش
+      newValue = value.replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
     }
 
     setNewSale(prev => ({ ...prev, [name]: newValue }));
@@ -68,9 +90,21 @@ function Sales({ products, setProducts, todaySales, setTodaySales, salesArchive,
 
     try {
       setIsSubmitting(true);
+      isProcessing.current = true;
+
+      // تبدیل اعداد فارسی به انگلیسی
+      const persianDate = `${toEnglishNumber(newSale.year)}/${toEnglishNumber(newSale.month)}/${toEnglishNumber(newSale.day)}`;
+      const now = new Date();
+      const timestamp = parse(persianDate, 'yyyy/MM/dd', now);
+      
+      // تنظیم ساعت
+      timestamp.setHours(now.getHours());
+      timestamp.setMinutes(now.getMinutes());
+      timestamp.setSeconds(now.getSeconds());
+      timestamp.setMilliseconds(0);
 
       const quantity = parseFloat(newSale.quantity);
-      
+
       if (editingSale) {
         // 1. برگرداندن موجودی قبلی به محصول
         const oldSale = todaySales.find(s => s.id === editingSale.id);
@@ -126,7 +160,7 @@ function Sales({ products, setProducts, todaySales, setTodaySales, salesArchive,
             discount: parseFloat(newSale.discount || 0),
             purchaseCost: totalPurchaseCost,
             customerName: newSale.customerName,
-            timestamp: new Date().toISOString(),
+            timestamp: timestamp.toISOString(),
             total: (quantity * parseFloat(newSale.price)) - parseFloat(newSale.discount || 0)
           } : s))
         ]);
@@ -168,7 +202,7 @@ function Sales({ products, setProducts, todaySales, setTodaySales, salesArchive,
             discount: parseFloat(newSale.discount || 0),
             purchaseCost: totalPurchaseCost,
             customerName: newSale.customerName,
-            timestamp: new Date().toISOString(),
+            timestamp: timestamp.toISOString(),
             total: (quantity * parseFloat(newSale.price)) - parseFloat(newSale.discount || 0)
           }, ...todaySales]),
           setProducts(products.map(p => 
@@ -195,7 +229,10 @@ function Sales({ products, setProducts, todaySales, setTodaySales, salesArchive,
       quantity: 1,
       price: '',
       discount: 0,
-      customerName: ''
+      customerName: '',
+      year: format(new Date(), 'yyyy'),
+      month: format(new Date(), 'MM'),
+      day: format(new Date(), 'dd')
     });
     setSelectedProduct(null);
     setEditingSale(null);
@@ -214,29 +251,65 @@ function Sales({ products, setProducts, todaySales, setTodaySales, salesArchive,
   });
 
   // تغییر تابع فیلتر آرشیو
-  const filteredArchive = salesArchive.filter(sale => {
-    const saleDate = new Date(sale.timestamp);
-    const matchesDateRange = (!startDate || saleDate >= new Date(startDate)) &&
-                            (!endDate || saleDate <= new Date(endDate));
+  const filteredArchive = [...todaySales, ...salesArchive].filter(sale => {
+    // گرفتن تاریخ شمسی از timestamp
+    const jalaliDate = format(parseISO(sale.timestamp), 'yyyy/MM/dd').split('/');
+    const saleYear = parseInt(jalaliDate[0]);
+    const saleMonth = parseInt(jalaliDate[1]);
+    const saleDay = parseInt(jalaliDate[2]);
+
+    let matchesDateRange = true;
+
+    // تبدیل اعداد فارسی به انگلیسی و تبدیل به عدد
+    const startYear = startDateFields.year ? parseInt(toEnglishNumber(startDateFields.year)) : null;
+    const startMonth = startDateFields.month ? parseInt(toEnglishNumber(startDateFields.month)) : null;
+    const startDay = startDateFields.day ? parseInt(toEnglishNumber(startDateFields.day)) : null;
+
+    const endYear = endDateFields.year ? parseInt(toEnglishNumber(endDateFields.year)) : null;
+    const endMonth = endDateFields.month ? parseInt(toEnglishNumber(endDateFields.month)) : null;
+    const endDay = endDateFields.day ? parseInt(toEnglishNumber(endDateFields.day)) : null;
+
+    // مقایسه تاریخ شروع
+    if (startYear) {
+      if (saleYear < startYear) return false;
+      if (saleYear === startYear) {
+        if (startMonth && saleMonth < startMonth) return false;
+        if (startMonth && saleMonth === startMonth && startDay && saleDay < startDay) return false;
+      }
+    }
+
+    // مقایسه تاریخ پایان
+    if (endYear) {
+      if (saleYear > endYear) return false;
+      if (saleYear === endYear) {
+        if (endMonth && saleMonth > endMonth) return false;
+        if (endMonth && saleMonth === endMonth && endDay && saleDay > endDay) return false;
+      }
+    }
+
+    // جستجو در نام محصول و مشتری
     const matchesSearch = !archiveSearchQuery || 
-                         sale.productName.toLowerCase().includes(archiveSearchQuery.toLowerCase()) ||
-                         (sale.customerName && sale.customerName.toLowerCase().includes(archiveSearchQuery.toLowerCase()));
-    
+      sale.productName.toLowerCase().includes(archiveSearchQuery.toLowerCase()) ||
+      (sale.customerName && sale.customerName.toLowerCase().includes(archiveSearchQuery.toLowerCase()));
+
     return matchesDateRange && matchesSearch;
   });
 
   const handleEdit = (sale) => {
-    setShowSaleForm(true);
     setEditingSale(sale);
-    const product = products.find(p => p.id === sale.productId);
-    setSelectedProduct(product);
     setNewSale({
       productId: sale.productId,
-      quantity: sale.quantity.toString(),
-      price: sale.salePrice.toString(),
-      discount: sale.discount.toString(),
-      customerName: sale.customerName || ''
+      quantity: sale.quantity,
+      price: sale.salePrice,
+      discount: sale.discount,
+      customerName: sale.customerName,
+      // تبدیل تاریخ به اعداد فارسی
+      year: toPersianNumber(format(parseISO(sale.timestamp), 'yyyy')),
+      month: toPersianNumber(format(parseISO(sale.timestamp), 'MM')),
+      day: toPersianNumber(format(parseISO(sale.timestamp), 'dd'))
     });
+    setSelectedProduct(products.find(p => p.id === sale.productId));
+    setShowSaleForm(true);
   };
 
   const handleDelete = async (saleId) => {
@@ -289,7 +362,10 @@ function Sales({ products, setProducts, todaySales, setTodaySales, salesArchive,
               quantity: 1,
               price: '',
               discount: 0,
-              customerName: ''
+              customerName: '',
+              year: format(new Date(), 'yyyy'),
+              month: format(new Date(), 'MM'),
+              day: format(new Date(), 'dd')
             });
             setSelectedProduct(null);
             setShowSaleForm(true);
@@ -480,37 +556,72 @@ function Sales({ products, setProducts, todaySales, setTodaySales, salesArchive,
 
                   {selectedProduct && (
                     <>
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-3 gap-2">
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
-                            تعداد
-                          </label>
                           <input
                             type="text"
-                            name="quantity"
-                            value={newSale.quantity}
+                            name="day"
+                            value={newSale.day}
                             onChange={handleInputChange}
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            placeholder={`حداکثر: ${toPersianNumber(
-                              selectedProduct.variants.reduce((total, v) => total + v.stock, 0)
-                            )}`}
-                            dir="ltr"
+                            placeholder="روز"
+                            maxLength="2"
                           />
                         </div>
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
-                            قیمت فروش (تومان)
-                          </label>
                           <input
                             type="text"
-                            name="price"
-                            value={newSale.price}
+                            name="month"
+                            value={newSale.month}
                             onChange={handleInputChange}
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            placeholder="تومان"
-                            dir="ltr"
+                            placeholder="ماه"
+                            maxLength="2"
                           />
                         </div>
+                        <div>
+                          <input
+                            type="text"
+                            name="year"
+                            value={newSale.year}
+                            onChange={handleInputChange}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            placeholder="سال"
+                            maxLength="4"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          تعداد
+                        </label>
+                        <input
+                          type="text"
+                          name="quantity"
+                          value={newSale.quantity}
+                          onChange={handleInputChange}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder={`حداکثر: ${toPersianNumber(
+                            selectedProduct.variants.reduce((total, v) => total + v.stock, 0)
+                          )}`}
+                          dir="ltr"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          قیمت فروش (تومان)
+                        </label>
+                        <input
+                          type="text"
+                          name="price"
+                          value={newSale.price}
+                          onChange={handleInputChange}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder="تومان"
+                          dir="ltr"
+                        />
                       </div>
 
                       <div>
@@ -597,8 +708,13 @@ function Sales({ products, setProducts, todaySales, setTodaySales, salesArchive,
                         </div>
                         <div>
                           <div className="text-xs text-gray-500 text-left mb-2">
-                            <div>{new Date(sale.timestamp).toLocaleDateString('fa-IR')}</div>
-                            <div>{new Date(sale.timestamp).toLocaleTimeString('fa-IR')}</div>
+                            <div className="text-xs text-gray-500">
+                              {new Date(sale.timestamp).toLocaleDateString('fa-IR')} - {' '}
+                              {new Date(sale.timestamp).toLocaleTimeString('fa-IR', {
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
+                            </div>
                           </div>
                           <div className="text-sm font-medium text-gray-900 text-left">
                             {formatPrice(sale.total)}
@@ -642,8 +758,13 @@ function Sales({ products, setProducts, todaySales, setTodaySales, salesArchive,
                           <td className="px-4 py-3 text-sm text-gray-900">{sale.customerName || '-'}</td>
                           <td className="px-4 py-3 text-sm text-gray-900">{formatPrice(sale.total)}</td>
                           <td className="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">
-                            <div>{new Date(sale.timestamp).toLocaleDateString('fa-IR')}</div>
-                            <div>{new Date(sale.timestamp).toLocaleTimeString('fa-IR')}</div>
+                            <div className="text-xs text-gray-500">
+                              {new Date(sale.timestamp).toLocaleDateString('fa-IR')} - {' '}
+                              {new Date(sale.timestamp).toLocaleTimeString('fa-IR', {
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
+                            </div>
                           </td>
                           <td className="px-4 py-3 text-sm text-gray-500">
                             <div className="flex items-center gap-2">
@@ -672,21 +793,80 @@ function Sales({ products, setProducts, todaySales, setTodaySales, salesArchive,
             <div className="flex flex-wrap gap-4 mb-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">از تاریخ</label>
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={e => setStartDate(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-lg"
-                />
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={startDateFields.day}
+                    onChange={e => {
+                      // تبدیل اعداد انگلیسی به فارسی
+                      const persianValue = e.target.value.replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
+                      setStartDateFields(prev => ({ ...prev, day: persianValue }));
+                    }}
+                    className="w-16 px-2 py-2 border border-gray-300 rounded-lg text-center"
+                    placeholder="روز"
+                    maxLength="2"
+                  />
+                  <input
+                    type="text"
+                    value={startDateFields.month}
+                    onChange={e => {
+                      const persianValue = e.target.value.replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
+                      setStartDateFields(prev => ({ ...prev, month: persianValue }));
+                    }}
+                    className="w-16 px-2 py-2 border border-gray-300 rounded-lg text-center"
+                    placeholder="ماه"
+                    maxLength="2"
+                  />
+                  <input
+                    type="text"
+                    value={startDateFields.year}
+                    onChange={e => {
+                      const persianValue = e.target.value.replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
+                      setStartDateFields(prev => ({ ...prev, year: persianValue }));
+                    }}
+                    className="w-20 px-2 py-2 border border-gray-300 rounded-lg text-center"
+                    placeholder="سال"
+                    maxLength="4"
+                  />
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">تا تاریخ</label>
-                <input
-                  type="date"
-                  value={endDate}
-                  onChange={e => setEndDate(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-lg"
-                />
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={endDateFields.day}
+                    onChange={e => {
+                      const persianValue = e.target.value.replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
+                      setEndDateFields(prev => ({ ...prev, day: persianValue }));
+                    }}
+                    className="w-16 px-2 py-2 border border-gray-300 rounded-lg text-center"
+                    placeholder="روز"
+                    maxLength="2"
+                  />
+                  <input
+                    type="text"
+                    value={endDateFields.month}
+                    onChange={e => {
+                      const persianValue = e.target.value.replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
+                      setEndDateFields(prev => ({ ...prev, month: persianValue }));
+                    }}
+                    className="w-16 px-2 py-2 border border-gray-300 rounded-lg text-center"
+                    placeholder="ماه"
+                    maxLength="2"
+                  />
+                  <input
+                    type="text"
+                    value={endDateFields.year}
+                    onChange={e => {
+                      const persianValue = e.target.value.replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
+                      setEndDateFields(prev => ({ ...prev, year: persianValue }));
+                    }}
+                    className="w-20 px-2 py-2 border border-gray-300 rounded-lg text-center"
+                    placeholder="سال"
+                    maxLength="4"
+                  />
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">جستجو</label>
@@ -733,10 +913,11 @@ function Sales({ products, setProducts, todaySales, setTodaySales, salesArchive,
                       </div>
                     </div>
                     <div className="text-xs text-gray-500">
-                      {new Date(sale.timestamp).toLocaleDateString('fa-IR')}
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      {new Date(sale.timestamp).toLocaleTimeString('fa-IR')}
+                      {new Date(sale.timestamp).toLocaleDateString('fa-IR')} - {' '}
+                      {new Date(sale.timestamp).toLocaleTimeString('fa-IR', {
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })}
                     </div>
                     <div className="flex items-center gap-2 mt-2">
                       <button
@@ -775,7 +956,11 @@ function Sales({ products, setProducts, todaySales, setTodaySales, salesArchive,
                       {filteredArchive.map((sale) => (
                         <tr key={sale.id} className="hover:bg-gray-50">
                           <td className="px-4 py-3 text-sm text-gray-500">
-                            {new Date(sale.timestamp).toLocaleDateString('fa-IR')}
+                            {new Date(sale.timestamp).toLocaleDateString('fa-IR')} - {' '}
+                            {new Date(sale.timestamp).toLocaleTimeString('fa-IR', {
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
                           </td>
                           <td className="px-4 py-3 text-sm text-gray-900">{sale.productName}</td>
                           <td className="px-4 py-3 text-sm text-gray-900">{toPersianNumber(sale.quantity)}</td>

@@ -1,15 +1,17 @@
-import { useState } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { debounce } from '../utils/debounce';
 
 function Expenses({ expenses, setExpenses }) {
   const { currentUser } = useAuth();
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingExpense, setEditingExpense] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [newExpense, setNewExpense] = useState({
     title: '',
     amount: '',
-    description: '',
-    category: 'عمومی'
+    category: 'عمومی',
+    description: ''
   });
 
   // اضافه کردن state برای دسته‌بندی‌ها
@@ -24,6 +26,8 @@ function Expenses({ expenses, setExpenses }) {
 
   // اضافه کردن state برای کنترل نمایش منوی دسته‌بندی
   const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
+
+  const isProcessing = useRef(false);
 
   // تبدیل اعداد به فارسی
   const toPersianNumber = (num) => {
@@ -50,48 +54,48 @@ function Expenses({ expenses, setExpenses }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!newExpense.title || !newExpense.amount) {
-      alert('لطفاً عنوان و مبلغ هزینه را وارد کنید');
-      return;
-    }
+    
+    if (isSubmitting) return;
 
     try {
+      setIsSubmitting(true);
+      
+      if (!newExpense.title || !newExpense.amount) {
+        alert('لطفاً عنوان و مبلغ را وارد کنید');
+        return;
+      }
+
+      const expense = {
+        id: editingExpense?.id || Date.now(),
+        ...newExpense,
+        amount: parseFloat(newExpense.amount),
+        timestamp: new Date().toISOString()
+      };
+
       if (editingExpense) {
-        const updatedExpenses = expenses.map(exp => 
-          exp.id === editingExpense.id
-            ? {
-                ...editingExpense,
-                title: newExpense.title,
-                amount: parseFloat(newExpense.amount),
-                description: newExpense.description,
-                category: newExpense.category
-              }
-            : exp
-        );
-        await setExpenses(updatedExpenses);
+        await setExpenses(expenses.map(e => e.id === editingExpense.id ? expense : e));
       } else {
-        const expenseToAdd = {
-          id: Date.now(),
-          title: newExpense.title,
-          amount: parseFloat(newExpense.amount),
-          description: newExpense.description,
-          category: newExpense.category,
-          timestamp: new Date().toISOString()
-        };
-        await setExpenses([expenseToAdd, ...expenses]);
+        await setExpenses([expense, ...expenses]);
       }
 
       setNewExpense({
         title: '',
         amount: '',
-        description: '',
-        category: 'عمومی'
+        category: 'عمومی',
+        description: ''
       });
       setEditingExpense(null);
       setShowAddForm(false);
+
+      // تاخیر 2 ثانیه‌ای قبل از فعال شدن مجدد دکمه
+      setTimeout(() => {
+        setIsSubmitting(false);
+      }, 2000);
+
     } catch (error) {
-      console.error('خطا در ذخیره هزینه:', error);
-      alert('خطا در ذخیره هزینه');
+      console.error('خطا در ثبت هزینه:', error);
+      alert('خطا در ثبت هزینه');
+      setIsSubmitting(false);
     }
   };
 
@@ -140,8 +144,8 @@ function Expenses({ expenses, setExpenses }) {
             setNewExpense({
               title: '',
               amount: '',
-              description: '',
-              category: 'عمومی'
+              category: 'عمومی',
+              description: ''
             });
             setShowAddForm(true);
           }}
@@ -252,9 +256,17 @@ function Expenses({ expenses, setExpenses }) {
               <div className="flex justify-end">
                 <button
                   type="submit"
-                  className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                  disabled={isSubmitting}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                 >
-                  {editingExpense ? 'ویرایش هزینه' : 'ثبت هزینه'}
+                  {isSubmitting ? (
+                    <>
+                      <i className="fas fa-spinner fa-spin"></i>
+                      <span>در حال ثبت...</span>
+                    </>
+                  ) : (
+                    <span>{editingExpense ? 'ویرایش هزینه' : 'ثبت هزینه'}</span>
+                  )}
                 </button>
               </div>
             </form>

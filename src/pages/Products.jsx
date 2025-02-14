@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { db } from '../firebase';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
@@ -35,6 +35,7 @@ function Products({ products, setProducts }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedViewCategory, setSelectedViewCategory] = useState('all');
   const [isViewCategoryDropdownOpen, setIsViewCategoryDropdownOpen] = useState(false);
+  const isProcessing = useRef(false);
 
   // اضافه کردن آیکون‌های موجود
   const availableIcons = [
@@ -141,7 +142,11 @@ function Products({ products, setProducts }) {
   // آپدیت handleSubmit برای محصولات
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isProcessing.current) return;
+
     try {
+      isProcessing.current = true;
+
       if (!newProduct.name) {
         alert('لطفاً نام محصول را وارد کنید');
         return;
@@ -185,6 +190,8 @@ function Products({ products, setProducts }) {
     } catch (error) {
       console.error('خطا در ذخیره محصول:', error);
       alert('خطا در ذخیره محصول');
+    } finally {
+      isProcessing.current = false;
     }
   };
 
@@ -376,6 +383,7 @@ function Products({ products, setProducts }) {
                         </label>
                         <input
                           type="text"
+                          name="price"
                           value={variant.purchasePrice}
                           onChange={(e) => {
                             const newValue = e.target.value.replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d));
@@ -389,6 +397,8 @@ function Products({ products, setProducts }) {
                             }));
                           }}
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder="تومان"
+                          dir="ltr"
                         />
                       </div>
                       <div>
@@ -482,9 +492,17 @@ function Products({ products, setProducts }) {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                  disabled={isProcessing.current}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                 >
-                  {editingProduct ? 'ویرایش محصول' : 'ذخیره محصول'}
+                  {isProcessing.current ? (
+                    <>
+                      <i className="fas fa-spinner fa-spin"></i>
+                      <span>در حال ثبت...</span>
+                    </>
+                  ) : (
+                    <span>ثبت محصول</span>
+                  )}
                 </button>
               </div>
             </form>

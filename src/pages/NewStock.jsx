@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { format, parse, parseISO } from 'date-fns-jalali';
 
 function NewStock({ products, setProducts, stockLogs, setStockLogs }) {
   const { currentUser } = useAuth();
@@ -10,14 +11,25 @@ function NewStock({ products, setProducts, stockLogs, setStockLogs }) {
     productId: '',
     quantity: 1,
     purchasePrice: '',
-    customerName: ''
+    customerName: '',
+    year: format(new Date(), 'yyyy'),
+    month: format(new Date(), 'MM'),
+    day: format(new Date(), 'dd')
   });
   const isProcessing = useRef(false);
   const [editingStock, setEditingStock] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [activeTab, setActiveTab] = useState('today');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  const [startDateFields, setStartDateFields] = useState({
+    year: '',
+    month: '',
+    day: ''
+  });
+  const [endDateFields, setEndDateFields] = useState({
+    year: '',
+    month: '',
+    day: ''
+  });
   const [archiveSearchQuery, setArchiveSearchQuery] = useState('');
 
   // تبدیل اعداد به فارسی
@@ -30,30 +42,43 @@ function NewStock({ products, setProducts, stockLogs, setStockLogs }) {
     return toPersianNumber(price.toLocaleString()) + ' تومان';
   };
 
+  // تابع تبدیل اعداد فارسی به انگلیسی
+  const toEnglishNumber = (str) => {
+    return str.replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d));
+  };
+
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     let newValue = value;
 
-    // فقط برای فیلدهای عددی تبدیل انجام بشه
+    // برای فیلدهای عددی
     if (name === 'quantity' || name === 'purchasePrice') {
       // تبدیل اعداد فارسی به انگلیسی
-      newValue = value.replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d));
+      newValue = toEnglishNumber(value);
       if (!/^\d*\.?\d{0,2}$/.test(newValue)) return;
+    }
+    // برای فیلدهای تاریخ
+    else if (name === 'year' || name === 'month' || name === 'day') {
+      // تبدیل به اعداد فارسی برای نمایش
+      newValue = value.replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
     }
 
     setNewStock(prev => ({ ...prev, [name]: newValue }));
   };
 
-  const handleEdit = (stockLog) => {
-    setEditingStock(stockLog);
-    const product = products.find(p => p.id === stockLog.productId);
-    setSelectedProduct(product);
+  const handleEdit = (log) => {
+    setEditingStock(log);
     setNewStock({
-      productId: stockLog.productId,
-      quantity: stockLog.quantity.toString(),
-      purchasePrice: stockLog.price.toString(),
-      customerName: stockLog.customerName || ''
+      productId: log.productId,
+      quantity: log.quantity,
+      purchasePrice: log.price,
+      customerName: log.customerName,
+      // تبدیل تاریخ به اعداد فارسی
+      year: toPersianNumber(format(parseISO(log.timestamp), 'yyyy')),
+      month: toPersianNumber(format(parseISO(log.timestamp), 'MM')),
+      day: toPersianNumber(format(parseISO(log.timestamp), 'dd'))
     });
+    setSelectedProduct(products.find(p => p.id === log.productId));
     setShowForm(true);
   };
 
@@ -105,6 +130,17 @@ function NewStock({ products, setProducts, stockLogs, setStockLogs }) {
 
     try {
       isProcessing.current = true;
+
+      // تبدیل اعداد فارسی به انگلیسی
+      const persianDate = `${toEnglishNumber(newStock.year)}/${toEnglishNumber(newStock.month)}/${toEnglishNumber(newStock.day)}`;
+      const now = new Date();
+      const timestamp = parse(persianDate, 'yyyy/MM/dd', now);
+      
+      // تنظیم ساعت
+      timestamp.setHours(now.getHours());
+      timestamp.setMinutes(now.getMinutes());
+      timestamp.setSeconds(now.getSeconds());
+      timestamp.setMilliseconds(0);
 
       const quantity = parseFloat(newStock.quantity);
       const price = parseFloat(newStock.purchasePrice);
@@ -180,7 +216,7 @@ function NewStock({ products, setProducts, stockLogs, setStockLogs }) {
             productName: selectedProduct.name,
             quantity,
             price,
-            timestamp: new Date().toISOString(),
+            timestamp: timestamp.toISOString(),
             customerName: newStock.customerName
           } : l))
         ]);
@@ -221,7 +257,7 @@ function NewStock({ products, setProducts, stockLogs, setStockLogs }) {
             productName: selectedProduct.name,
             quantity,
             price,
-            timestamp: new Date().toISOString(),
+            timestamp: timestamp.toISOString(),
             customerName: newStock.customerName
           }, ...stockLogs])
         ]);
@@ -242,7 +278,10 @@ function NewStock({ products, setProducts, stockLogs, setStockLogs }) {
       productId: '',
       quantity: 1,
       purchasePrice: '',
-      customerName: ''
+      customerName: '',
+      year: format(new Date(), 'yyyy'),
+      month: format(new Date(), 'MM'),
+      day: format(new Date(), 'dd')
     });
     setSelectedProduct(null);
     setEditingStock(null);
@@ -256,15 +295,48 @@ function NewStock({ products, setProducts, stockLogs, setStockLogs }) {
   });
 
   // تابع فیلتر
-  const filteredLogs = stockLogs.filter(log => {
-    const logDate = new Date(log.timestamp);
-    const matchesDateRange = (!startDate || logDate >= new Date(startDate)) &&
-                            (!endDate || logDate <= new Date(endDate));
+  const filteredLogs = [...stockLogs].filter(log => {
+    // گرفتن تاریخ شمسی از timestamp
+    const jalaliDate = format(parseISO(log.timestamp), 'yyyy/MM/dd').split('/');
+    const logYear = parseInt(jalaliDate[0]);
+    const logMonth = parseInt(jalaliDate[1]);
+    const logDay = parseInt(jalaliDate[2]);
+
+    let matchesDateRange = true;
+
+    // تبدیل اعداد فارسی به انگلیسی و تبدیل به عدد
+    const startYear = startDateFields.year ? parseInt(toEnglishNumber(startDateFields.year)) : null;
+    const startMonth = startDateFields.month ? parseInt(toEnglishNumber(startDateFields.month)) : null;
+    const startDay = startDateFields.day ? parseInt(toEnglishNumber(startDateFields.day)) : null;
+
+    const endYear = endDateFields.year ? parseInt(toEnglishNumber(endDateFields.year)) : null;
+    const endMonth = endDateFields.month ? parseInt(toEnglishNumber(endDateFields.month)) : null;
+    const endDay = endDateFields.day ? parseInt(toEnglishNumber(endDateFields.day)) : null;
+
+    // مقایسه تاریخ شروع
+    if (startYear) {
+      if (logYear < startYear) return false;
+      if (logYear === startYear) {
+        if (startMonth && logMonth < startMonth) return false;
+        if (startMonth && logMonth === startMonth && startDay && logDay < startDay) return false;
+      }
+    }
+
+    // مقایسه تاریخ پایان
+    if (endYear) {
+      if (logYear > endYear) return false;
+      if (logYear === endYear) {
+        if (endMonth && logMonth > endMonth) return false;
+        if (endMonth && logMonth === endMonth && endDay && logDay > endDay) return false;
+      }
+    }
+
+    // جستجو در نام محصول و مشتری
     const matchesCustomer = !archiveSearchQuery || 
-                           (log.customerName && log.customerName.toLowerCase().includes(archiveSearchQuery.toLowerCase()));
+      (log.customerName && log.customerName.toLowerCase().includes(archiveSearchQuery.toLowerCase()));
     const matchesProduct = !searchQuery || 
-                          log.productName.toLowerCase().includes(searchQuery.toLowerCase());
-    
+      log.productName.toLowerCase().includes(searchQuery.toLowerCase());
+
     return matchesDateRange && matchesCustomer && matchesProduct;
   });
 
@@ -282,7 +354,10 @@ function NewStock({ products, setProducts, stockLogs, setStockLogs }) {
               productId: '',
               quantity: 1,
               purchasePrice: '',
-              customerName: ''
+              customerName: '',
+              year: format(new Date(), 'yyyy'),
+              month: format(new Date(), 'MM'),
+              day: format(new Date(), 'dd')
             });
             setSelectedProduct(null);
             setShowForm(true);
@@ -343,8 +418,11 @@ function NewStock({ products, setProducts, stockLogs, setStockLogs }) {
                         </div>
                         <div>
                           <div className="text-xs text-gray-500 text-left mb-2">
-                            <div>{new Date(log.timestamp).toLocaleDateString('fa-IR')}</div>
-                            <div>{new Date(log.timestamp).toLocaleTimeString('fa-IR')}</div>
+                            <div>{new Date(log.timestamp).toLocaleDateString('fa-IR')} - {' '}
+                              {new Date(log.timestamp).toLocaleTimeString('fa-IR', {
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}</div>
                           </div>
                         </div>
                       </div>
@@ -381,8 +459,11 @@ function NewStock({ products, setProducts, stockLogs, setStockLogs }) {
                           <td className="px-4 py-3 text-sm text-gray-900">{formatPrice(log.price)}</td>
                           <td className="px-4 py-3 text-sm text-gray-900">{log.customerName || '-'}</td>
                           <td className="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">
-                            <div>{new Date(log.timestamp).toLocaleDateString('fa-IR')}</div>
-                            <div>{new Date(log.timestamp).toLocaleTimeString('fa-IR')}</div>
+                            <div>{new Date(log.timestamp).toLocaleDateString('fa-IR')} - {' '}
+                              {new Date(log.timestamp).toLocaleTimeString('fa-IR', {
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}</div>
                           </td>
                           <td className="px-4 py-3 text-sm text-gray-500">
                             <div className="flex items-center gap-2">
@@ -411,21 +492,80 @@ function NewStock({ products, setProducts, stockLogs, setStockLogs }) {
             <div className="flex flex-wrap gap-4 mb-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">از تاریخ</label>
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={e => setStartDate(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-lg"
-                />
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={startDateFields.day}
+                    onChange={e => {
+                      // تبدیل اعداد انگلیسی به فارسی
+                      const persianValue = e.target.value.replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
+                      setStartDateFields(prev => ({ ...prev, day: persianValue }));
+                    }}
+                    className="w-16 px-2 py-2 border border-gray-300 rounded-lg text-center"
+                    placeholder="روز"
+                    maxLength="2"
+                  />
+                  <input
+                    type="text"
+                    value={startDateFields.month}
+                    onChange={e => {
+                      const persianValue = e.target.value.replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
+                      setStartDateFields(prev => ({ ...prev, month: persianValue }));
+                    }}
+                    className="w-16 px-2 py-2 border border-gray-300 rounded-lg text-center"
+                    placeholder="ماه"
+                    maxLength="2"
+                  />
+                  <input
+                    type="text"
+                    value={startDateFields.year}
+                    onChange={e => {
+                      const persianValue = e.target.value.replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
+                      setStartDateFields(prev => ({ ...prev, year: persianValue }));
+                    }}
+                    className="w-20 px-2 py-2 border border-gray-300 rounded-lg text-center"
+                    placeholder="سال"
+                    maxLength="4"
+                  />
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">تا تاریخ</label>
-                <input
-                  type="date"
-                  value={endDate}
-                  onChange={e => setEndDate(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-lg"
-                />
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={endDateFields.day}
+                    onChange={e => {
+                      const persianValue = e.target.value.replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
+                      setEndDateFields(prev => ({ ...prev, day: persianValue }));
+                    }}
+                    className="w-16 px-2 py-2 border border-gray-300 rounded-lg text-center"
+                    placeholder="روز"
+                    maxLength="2"
+                  />
+                  <input
+                    type="text"
+                    value={endDateFields.month}
+                    onChange={e => {
+                      const persianValue = e.target.value.replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
+                      setEndDateFields(prev => ({ ...prev, month: persianValue }));
+                    }}
+                    className="w-16 px-2 py-2 border border-gray-300 rounded-lg text-center"
+                    placeholder="ماه"
+                    maxLength="2"
+                  />
+                  <input
+                    type="text"
+                    value={endDateFields.year}
+                    onChange={e => {
+                      const persianValue = e.target.value.replace(/[0-9]/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
+                      setEndDateFields(prev => ({ ...prev, year: persianValue }));
+                    }}
+                    className="w-20 px-2 py-2 border border-gray-300 rounded-lg text-center"
+                    placeholder="سال"
+                    maxLength="4"
+                  />
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">جستجو</label>
@@ -453,8 +593,11 @@ function NewStock({ products, setProducts, stockLogs, setStockLogs }) {
                   </div>
                 </div>
                 <div className="text-xs text-gray-500 text-left">
-                  <div>{new Date(log.timestamp).toLocaleDateString('fa-IR')}</div>
-                  <div>{new Date(log.timestamp).toLocaleTimeString('fa-IR')}</div>
+                  <div>{new Date(log.timestamp).toLocaleDateString('fa-IR')} - {' '}
+                    {new Date(log.timestamp).toLocaleTimeString('fa-IR', {
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })}</div>
                 </div>
               </div>
               <div className="flex items-center gap-2 mt-2">
@@ -605,6 +748,47 @@ function NewStock({ products, setProducts, stockLogs, setStockLogs }) {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="نام فروشنده"
                 />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  تاریخ
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <input
+                      type="text"
+                      name="day"
+                      value={newStock.day}
+                      onChange={handleInputChange}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="روز"
+                      maxLength="2"
+                    />
+                  </div>
+                  <div>
+                    <input
+                      type="text"
+                      name="month"
+                      value={newStock.month}
+                      onChange={handleInputChange}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="ماه"
+                      maxLength="2"
+                    />
+                  </div>
+                  <div>
+                    <input
+                      type="text"
+                      name="year"
+                      value={newStock.year}
+                      onChange={handleInputChange}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="سال"
+                      maxLength="4"
+                    />
+                  </div>
+                </div>
               </div>
 
               <div className="flex justify-end gap-3">

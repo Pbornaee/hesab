@@ -33,7 +33,7 @@ function Register() {
         storeName,
         createdAt: new Date().toISOString(),
         subscription: {
-          days: 30 // اشتراک 30 روزه اولیه
+          days: 7 // تغییر از 30 به 7 روز
         }
       });
 
