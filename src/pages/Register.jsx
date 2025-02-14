@@ -12,12 +12,12 @@ function Register() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    try {
-      const normalizedUsername = normalizeUsername(username);
+    setError('');
 
-      // چک کردن یوزرنیم تکراری در userAuth
-      const authRef = collection(db, 'userAuth');
-      const q = query(authRef, where('username', '==', normalizedUsername));
+    try {
+      // چک کردن یکتا بودن نام کاربری
+      const usersRef = collection(db, 'users');
+      const q = query(usersRef, where('normalizedUsername', '==', normalizeUsername(username)));
       const querySnapshot = await getDocs(q);
       
       if (!querySnapshot.empty) {
@@ -25,34 +25,22 @@ function Register() {
         return;
       }
 
-      // ایجاد داکیومنت جدید در userAuth با اضافه کردن subscription
-      const authDoc = doc(collection(db, 'userAuth'));
-      await setDoc(authDoc, {
-        username: normalizedUsername,
+      // ایجاد کاربر جدید
+      const userDocRef = doc(db, 'users', username);
+      await setDoc(userDocRef, {
+        username,
+        normalizedUsername: normalizeUsername(username),
         password,
         storeName,
-        createdAt: new Date().toISOString(),
-        subscription: {
-          days: 7 // تغییر از 30 به 7 روز
-        }
+        remainingDays: 7, // تغییر از 30 به 7 روز
+        lastSubscriptionCheck: new Date().toISOString()
       });
 
-      // ایجاد داکیومنت در users برای داده‌های اصلی (بدون subscription)
-      await setDoc(doc(db, 'users', authDoc.id), {
-        username: normalizedUsername,
-        storeName,
-        createdAt: new Date().toISOString(),
-        products: [],
-        todaySales: [],
-        salesArchive: [],
-        expenses: [],
-        stockLogs: []
-      });
-
+      // ریدایرکت به صفحه ورود
       navigate('/login');
-    } catch (err) {
-      console.error(err);
-      setError('خطا در ثبت نام. لطفاً دوباره تلاش کنید.');
+    } catch (error) {
+      console.error('خطا در ثبت نام:', error);
+      setError('خطا در ثبت نام. لطفاً دوباره تلاش کنید');
     }
   };
 

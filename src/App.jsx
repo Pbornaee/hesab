@@ -14,6 +14,7 @@ import Accounting from './pages/Accounting';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Tutorial from './pages/Tutorial';
+import People from './pages/People';
 
 function PrivateRoute({ children }) {
   const { currentUser } = useAuth();
@@ -93,6 +94,7 @@ function AppContent() {
   const [salesArchive, setSalesArchive] = useState([]);
   const [stockLogs, setStockLogs] = useState([]);
   const [expenses, setExpenses] = useState([]);
+  const [people, setPeople] = useState([]);
 
   // لود اطلاعات از فایربیس
   useEffect(() => {
@@ -104,6 +106,7 @@ function AppContent() {
         setSalesArchive([]);
         setStockLogs([]);
         setExpenses([]);
+        setPeople([]);
         return;
       }
 
@@ -117,6 +120,7 @@ function AppContent() {
           if (Array.isArray(data.salesArchive)) setSalesArchive(data.salesArchive);
           if (Array.isArray(data.stockLogs)) setStockLogs(data.stockLogs);
           if (Array.isArray(data.expenses)) setExpenses(data.expenses);
+          if (Array.isArray(data.people)) setPeople(data.people);
         }
       } catch (error) {
         console.error('خطا در بارگیری اطلاعات:', error);
@@ -126,6 +130,7 @@ function AppContent() {
         setSalesArchive([]);
         setStockLogs([]);
         setExpenses([]);
+        setPeople([]);
       }
     };
 
@@ -169,6 +174,69 @@ function AppContent() {
     await saveToFirebase({ expenses: newExpenses });
   };
 
+  const updatePeople = async (newPeople) => {
+    setPeople(newPeople);
+    await saveToFirebase({ people: newPeople });
+  };
+
+  // چک کردن و کم کردن اشتراک در نیمه شب
+  useEffect(() => {
+    if (!currentUser?.id) return;
+
+    const checkSubscription = async () => {
+      try {
+        const userDoc = await getDoc(doc(db, 'users', currentUser.id));
+        if (!userDoc.exists()) return;
+
+        const userData = userDoc.data();
+        const lastCheckDate = userData.lastSubscriptionCheck ? new Date(userData.lastSubscriptionCheck) : null;
+        const now = new Date();
+
+        // اگر آخرین چک در روز قبل بوده یا اصلا چک نشده
+        if (!lastCheckDate || lastCheckDate.getDate() !== now.getDate()) {
+          // کم کردن یک روز از اشتراک
+          const remainingDays = userData.remainingDays > 0 ? userData.remainingDays - 1 : 0;
+
+          await updateDoc(doc(db, 'users', currentUser.id), {
+            remainingDays,
+            lastSubscriptionCheck: now.toISOString()
+          });
+        }
+      } catch (error) {
+        console.error('خطا در بروزرسانی اشتراک:', error);
+      }
+    };
+
+    // تنظیم تایمر برای چک کردن در نیمه شب
+    const setMidnightCheck = () => {
+      const now = new Date();
+      const night = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate() + 1, // فردا
+        0, // ساعت 00
+        0, // دقیقه 00
+        0 // ثانیه 00
+      );
+      
+      const msUntilMidnight = night.getTime() - now.getTime();
+      
+      return setTimeout(() => {
+        checkSubscription();
+        // تنظیم مجدد تایمر برای شب بعد
+        setMidnightCheck();
+      }, msUntilMidnight);
+    };
+
+    // چک اولیه
+    checkSubscription();
+    
+    // تنظیم تایمر
+    const timer = setMidnightCheck();
+
+    return () => clearTimeout(timer);
+  }, [currentUser]);
+
   return (
     <Router>
       <div className="min-h-screen bg-gray-50">
@@ -203,6 +271,7 @@ function AppContent() {
                 setTodaySales={updateTodaySales}
                 salesArchive={salesArchive}
                 setSalesArchive={updateSalesArchive}
+                people={people}
               />
             </PrivateRoute>
           } />
@@ -213,6 +282,7 @@ function AppContent() {
                 setProducts={updateProducts}
                 stockLogs={stockLogs}
                 setStockLogs={updateStockLogs}
+                people={people}
               />
             </PrivateRoute>
           } />
@@ -238,6 +308,14 @@ function AppContent() {
           <Route path="/tutorial" element={
             <PrivateRoute>
               <Tutorial />
+            </PrivateRoute>
+          } />
+          <Route path="/people" element={
+            <PrivateRoute>
+              <People 
+                people={people}
+                setPeople={updatePeople}
+              />
             </PrivateRoute>
           } />
         </Routes>

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { db, normalizeUsername } from '../firebase';
-import { collection, query, where, getDocs, getDoc, doc } from 'firebase/firestore';
+import { collection, query, where, getDocs, getDoc, doc, updateDoc } from 'firebase/firestore';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -13,42 +13,41 @@ function Login() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setError('');
+
     try {
-      const normalizedUsername = normalizeUsername(username);
-
-      // جستجوی کاربر در userAuth
-      const authRef = collection(db, 'userAuth');
-      const q = query(authRef, where('username', '==', normalizedUsername));
-      const querySnapshot = await getDocs(q);
-
-      if (querySnapshot.empty) {
+      const userDoc = await getDoc(doc(db, 'users', username));
+      
+      if (!userDoc.exists()) {
         setError('نام کاربری یا رمز عبور اشتباه است');
         return;
       }
 
-      const authDoc = querySnapshot.docs[0];
-      const authData = authDoc.data();
-
-      // چک کردن پسورد
-      if (authData.password !== password) {
-        setError('نام کاربری یا رمز عبور اشتباه است');
-        return;
-      }
-
-      // دریافت اطلاعات کاربر از users
-      const userDoc = await getDoc(doc(db, 'users', authDoc.id));
       const userData = userDoc.data();
+      
+      if (userData.password !== password) {
+        setError('نام کاربری یا رمز عبور اشتباه است');
+        return;
+      }
 
-      // ذخیره اطلاعات کاربر در context
+      // اگر remainingDays وجود نداشت، اضافه کنیم
+      if (typeof userData.remainingDays === 'undefined') {
+        await updateDoc(doc(db, 'users', username), {
+          remainingDays: 7,
+          lastSubscriptionCheck: new Date().toISOString()
+        });
+      }
+
       setCurrentUser({
-        id: authDoc.id,
-        ...userData
+        id: username,
+        username: userData.username,
+        storeName: userData.storeName
       });
 
       navigate('/');
-    } catch (err) {
-      console.error(err);
-      setError('خطا در ورود. لطفاً دوباره تلاش کنید.');
+    } catch (error) {
+      console.error('خطا در ورود:', error);
+      setError('خطا در ورود. لطفاً دوباره تلاش کنید');
     }
   };
 

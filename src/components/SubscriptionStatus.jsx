@@ -13,25 +13,24 @@ function SubscriptionStatus() {
       if (!currentUser?.id) return;
 
       try {
-        const userDoc = await getDoc(doc(db, 'userAuth', currentUser.id));
+        const userDoc = await getDoc(doc(db, 'users', currentUser.id));
         if (!userDoc.exists()) return;
 
-        const userData = userDoc.data();
-        const sub = userData.subscription;
-        
-        if (!sub) return;
-
         setSubscription({
-          remainingDays: sub.days
+          remainingDays: userDoc.data().remainingDays
         });
       } catch (error) {
-        console.error('خطا در بررسی اشتراک:', error);
+        console.error('خطا در دریافت وضعیت اشتراک:', error);
       } finally {
         setLoading(false);
       }
     };
 
     checkSubscription();
+
+    // آپدیت هر یک دقیقه
+    const interval = setInterval(checkSubscription, 60000);
+    return () => clearInterval(interval);
   }, [currentUser]);
 
   if (loading) return null;

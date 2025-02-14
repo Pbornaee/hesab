@@ -14,13 +14,14 @@ function Sidebar() {
   };
 
   const menuItems = [
-    { path: '/', icon: 'home', label: 'داشبورد' },
-    { path: '/products', icon: 'shopping-bag', label: 'محصولات' },
-    { path: '/sales', icon: 'dollar-sign', label: 'فروش روز' },
-    { path: '/new-stock', icon: 'box', label: 'بار جدید' },
-    { path: '/expenses', icon: 'credit-card', label: 'هزینه‌ها' },
-    { path: '/accounting', icon: 'calculator', label: 'حساب و کتاب' },
-    { path: '/tutorial', icon: 'question-circle', label: 'راهنما' },
+    { path: '/', icon: 'fas fa-home', title: 'داشبورد' },
+    { path: '/products', icon: 'fas fa-box', title: 'محصولات' },
+    { path: '/sales', icon: 'fas fa-shopping-cart', title: 'فروش' },
+    { path: '/new-stock', icon: 'fas fa-truck-loading', title: 'ورود بار' },
+    { path: '/expenses', icon: 'fas fa-money-bill', title: 'هزینه‌ها' },
+    { path: '/accounting', icon: 'fas fa-calculator', title: 'حسابداری' },
+    { path: '/people', icon: 'fas fa-users', title: 'اشخاص' },
+    { path: '/tutorial', icon: 'fas fa-question-circle', title: 'آموزش' }
   ];
 
   const handleLogout = async () => {
@@ -86,7 +87,7 @@ function Sidebar() {
                   }`}
               >
                 <i className={`fas fa-${item.icon} w-6 ${isActiveLink(item.path) ? 'text-blue-600' : 'text-gray-400'}`}></i>
-                <span className={`${isActiveLink(item.path) ? 'font-medium' : ''}`}>{item.label}</span>
+                <span className={`${isActiveLink(item.path) ? 'font-medium' : ''}`}>{item.title}</span>
               </Link>
             ))}
           </nav>
