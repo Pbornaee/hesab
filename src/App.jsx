@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { db, auth } from './firebase';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, setDoc } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
 import Dashboard from './pages/Dashboard';
 import Products from './pages/Products';
@@ -87,34 +87,29 @@ function PrivateRoute({ children }) {
 }
 
 // کامپوننت اصلی که state ها رو مدیریت می‌کنه
-function AppContent() {
-  const { currentUser } = useAuth();
-  const [products, setProducts] = useState([]);
-  const [todaySales, setTodaySales] = useState([]);
-  const [salesArchive, setSalesArchive] = useState([]);
-  const [stockLogs, setStockLogs] = useState([]);
-  const [expenses, setExpenses] = useState([]);
-  const [people, setPeople] = useState([]);
+function AppContent({ products, setProducts, todaySales, setTodaySales, salesArchive, setSalesArchive, 
+                     expenses, setExpenses, stockLogs, setStockLogs, people, setPeople, clearAllData }) {
+  const { currentUser, setCurrentUser } = useAuth();
+
+  // پاک کردن state ها در هر تغییر currentUser
+  useEffect(() => {
+    clearAllData();
+  }, [currentUser?.id]); // فقط وقتی ID کاربر تغییر می‌کند اجرا می‌شود
 
   // لود اطلاعات از فایربیس
   useEffect(() => {
     const loadUserData = async () => {
-      if (!currentUser || !currentUser.id) {
-        // اگر کاربر لاگین نیست، همه state ها رو خالی می‌کنیم
-        setProducts([]);
-        setTodaySales([]);
-        setSalesArchive([]);
-        setStockLogs([]);
-        setExpenses([]);
-        setPeople([]);
-        return;
-      }
+      if (!currentUser?.id) return;
 
       try {
         const userDoc = await getDoc(doc(db, 'users', currentUser.id));
+        
         if (userDoc.exists()) {
           const data = userDoc.data();
-          // فقط اگر داده وجود داشت، ست می‌کنیم
+          // پاک کردن state ها قبل از لود داده‌های جدید
+          clearAllData();
+          
+          // لود داده‌های جدید
           if (Array.isArray(data.products)) setProducts(data.products);
           if (Array.isArray(data.todaySales)) setTodaySales(data.todaySales);
           if (Array.isArray(data.salesArchive)) setSalesArchive(data.salesArchive);
@@ -124,24 +119,19 @@ function AppContent() {
         }
       } catch (error) {
         console.error('خطا در بارگیری اطلاعات:', error);
-        // در صورت خطا همه رو خالی می‌کنیم
-        setProducts([]);
-        setTodaySales([]);
-        setSalesArchive([]);
-        setStockLogs([]);
-        setExpenses([]);
-        setPeople([]);
+        clearAllData();
       }
     };
 
     loadUserData();
-  }, [currentUser]);
+  }, [currentUser?.id]); // فقط وقتی ID کاربر تغییر می‌کند اجرا می‌شود
 
   // ذخیره تغییرات در فایربیس
   const saveToFirebase = async (data) => {
     if (!currentUser || !currentUser.id) return;
 
     try {
+      // ذخیره در کالکشن users
       await updateDoc(doc(db, 'users', currentUser.id), data);
     } catch (error) {
       console.error('خطا در ذخیره اطلاعات:', error);
@@ -237,6 +227,11 @@ function AppContent() {
     return () => clearTimeout(timer);
   }, [currentUser]);
 
+  const handleLogout = () => {
+    clearAllData();
+    setCurrentUser(null);
+  };
+
   return (
     <Router>
       <div className="min-h-screen bg-gray-50">
@@ -326,9 +321,40 @@ function AppContent() {
 
 // کامپوننت اصلی که AuthProvider رو wrap می‌کنه
 function App() {
+  const [products, setProducts] = useState([]);
+  const [todaySales, setTodaySales] = useState([]);
+  const [salesArchive, setSalesArchive] = useState([]);
+  const [expenses, setExpenses] = useState([]);
+  const [stockLogs, setStockLogs] = useState([]);
+  const [people, setPeople] = useState([]);
+
+  // تابع پاکسازی همه state ها
+  const clearAllData = () => {
+    setProducts([]);
+    setTodaySales([]);
+    setSalesArchive([]);
+    setExpenses([]);
+    setStockLogs([]);
+    setPeople([]);
+  };
+
   return (
     <AuthProvider>
-      <AppContent />
+      <AppContent 
+        products={products}
+        setProducts={setProducts}
+        todaySales={todaySales}
+        setTodaySales={setTodaySales}
+        salesArchive={salesArchive}
+        setSalesArchive={setSalesArchive}
+        expenses={expenses}
+        setExpenses={setExpenses}
+        stockLogs={stockLogs}
+        setStockLogs={setStockLogs}
+        people={people}
+        setPeople={setPeople}
+        clearAllData={clearAllData}  // پاس دادن تابع پاکسازی
+      />
     </AuthProvider>
   );
 }
