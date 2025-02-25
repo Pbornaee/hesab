@@ -87,9 +87,19 @@ function Accounting({ products, todaySales, salesArchive, expenses, stockLogs })
         );
 
         const totalProfit = filteredSales.reduce((total, sale) => {
-          const revenue = (sale.salePrice * sale.quantity) - (sale.discount || 0);
-          return total + (revenue - (sale.purchaseCost || 0));
-        }, 0) - totalExpenses;
+          const revenue = sale.price * sale.quantity;
+          
+          const product = products.find(p => p.id === sale.productId);
+          const purchasePrice = product?.variants.find(v => v.isOriginal)?.purchasePrice || 0;
+          
+          const purchaseCost = purchasePrice * sale.quantity;
+          
+          const profit = revenue - purchaseCost - (sale.discount || 0);
+          
+          return total + profit;
+        }, 0);
+
+        const finalProfit = totalProfit - totalExpenses;
 
         const stockValue = products.reduce((total, product) => 
           total + product.variants.reduce((variantTotal, variant) => 
@@ -114,7 +124,7 @@ function Accounting({ products, todaySales, salesArchive, expenses, stockLogs })
         setSummary({
           totalSales,
           totalExpenses,
-          totalProfit,
+          totalProfit: finalProfit,
           totalStock,
           stockValue,
           totalDiscounts,
@@ -128,6 +138,13 @@ function Accounting({ products, todaySales, salesArchive, expenses, stockLogs })
 
     calculateSummary();
   }, [selectedPeriod, todaySales, salesArchive, expenses, products]);
+
+  // محاسبه کل تخفیفات
+  const calculateTotalDiscounts = () => {
+    const todayDiscounts = todaySales.reduce((total, sale) => total + (sale.discount || 0), 0);
+    const archiveDiscounts = salesArchive.reduce((total, sale) => total + (sale.discount || 0), 0);
+    return todayDiscounts + archiveDiscounts;
+  };
 
   return (
     <div className="lg:p-6 p-4 max-w-7xl mx-auto mt-16 lg:mt-0">
@@ -219,9 +236,9 @@ function Accounting({ products, todaySales, salesArchive, expenses, stockLogs })
         {/* تخفیف */}
         <div className="bg-white rounded-xl shadow-sm p-6">
           <div className="flex items-center justify-between mb-4">
-            <div className="text-lg font-medium text-gray-800">تخفیف‌ها</div>
-            <div className="w-10 h-10 rounded-lg bg-orange-100 flex items-center justify-center">
-              <i className="fas fa-tags text-orange-600"></i>
+            <div className="text-lg font-medium text-gray-800">کل تخفیفات</div>
+            <div className="w-10 h-10 rounded-lg bg-red-100 flex items-center justify-center">
+              <i className="fas fa-tags text-red-600"></i>
             </div>
           </div>
           <div className="text-2xl font-bold text-gray-900 mb-2">

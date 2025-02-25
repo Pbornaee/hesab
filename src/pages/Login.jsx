@@ -8,34 +8,29 @@ function Login() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
   const { setCurrentUser } = useAuth();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setIsLoading(true);
 
     try {
       const userDoc = await getDoc(doc(db, 'users', username));
       
       if (!userDoc.exists()) {
         setError('نام کاربری یا رمز عبور اشتباه است');
+        setIsLoading(false);
         return;
       }
 
       const userData = userDoc.data();
-      
       if (userData.password !== password) {
         setError('نام کاربری یا رمز عبور اشتباه است');
+        setIsLoading(false);
         return;
-      }
-
-      // اگر remainingDays وجود نداشت، اضافه کنیم
-      if (typeof userData.remainingDays === 'undefined') {
-        await updateDoc(doc(db, 'users', username), {
-          remainingDays: 7,
-          lastSubscriptionCheck: new Date().toISOString()
-        });
       }
 
       setCurrentUser({
@@ -43,12 +38,14 @@ function Login() {
         username: userData.username,
         storeName: userData.storeName
       });
-
       navigate('/');
+
     } catch (error) {
       console.error('خطا در ورود:', error);
       setError('خطا در ورود. لطفاً دوباره تلاش کنید');
     }
+
+    setIsLoading(false);
   };
 
   return (

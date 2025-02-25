@@ -1,7 +1,8 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { db, normalizeUsername } from '../firebase';
-import { doc, setDoc, collection, query, where, getDocs } from 'firebase/firestore';
-import { useNavigate, Link } from 'react-router-dom';
+import { collection, query, where, getDocs, doc, setDoc } from 'firebase/firestore';
+import { Link } from 'react-router-dom';
 
 function Register() {
   const [username, setUsername] = useState('');
@@ -32,12 +33,13 @@ function Register() {
         normalizedUsername: normalizeUsername(username),
         password,
         storeName,
-        remainingDays: 7, // تغییر از 30 به 7 روز
+        remainingDays: 7,
         lastSubscriptionCheck: new Date().toISOString()
       });
 
       // ریدایرکت به صفحه ورود
       navigate('/login');
+
     } catch (error) {
       console.error('خطا در ثبت نام:', error);
       setError('خطا در ثبت نام. لطفاً دوباره تلاش کنید');

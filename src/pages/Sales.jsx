@@ -421,6 +421,39 @@ function Sales({ products, setProducts, todaySales, setTodaySales, salesArchive,
     }
   };
 
+  const calculateDiscount = (selectedProduct, salePrice) => {
+    if (!selectedProduct || !salePrice) return 0;
+    
+    // پیدا کردن نرخ اصلی محصول
+    const originalVariant = selectedProduct.variants.find(v => v.isOriginal);
+    if (!originalVariant || !originalVariant.salePrice) return 0;
+    
+    // محاسبه تخفیف
+    const discount = originalVariant.salePrice - parseFloat(salePrice);
+    return discount > 0 ? discount : 0;
+  };
+
+  const handlePriceChange = (formId, value) => {
+    const form = saleForms.find(f => f.id === formId);
+    if (!form || !form.selectedProduct) return;
+
+    const newValue = value.replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d));
+    if (!/^\d*\.?\d{0,2}$/.test(newValue)) return;
+
+    const discount = calculateDiscount(form.selectedProduct, newValue);
+    
+    setSaleForms(prev => prev.map(f =>
+      f.id === formId ? {
+        ...f,
+        data: {
+          ...f.data,
+          price: newValue,
+          discount: discount // تخفیف به صورت خودکار محاسبه می‌شود
+        }
+      } : f
+    ));
+  };
+
   return (
     <div className="lg:p-6 p-4 max-w-7xl mx-auto mt-16 lg:mt-0">
       {/* هدر */}
@@ -651,8 +684,8 @@ function Sales({ products, setProducts, todaySales, setTodaySales, salesArchive,
                                             data: { 
                                               ...f.data, 
                                               productId: product.id,
-                                              // پر کردن خودکار قیمت پیشنهادی با کمترین قیمت موجود
-                                              price: Math.min(...product.variants.filter(v => v.stock > 0).map(v => v.purchasePrice)).toString()
+                                              // پر کردن خودکار با قیمت فروش نرخ اصلی
+                                              price: (product.variants.find(v => v.isOriginal)?.salePrice || '').toString()
                                             }
                                           } : f
                                         ));
@@ -684,6 +717,35 @@ function Sales({ products, setProducts, todaySales, setTodaySales, salesArchive,
 
                       {form.selectedProduct && (
                         <>
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            {/* قیمت فروش */}
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">
+                                قیمت فروش
+                              </label>
+                              <input
+                                type="text"
+                                value={form.data.price}
+                                onChange={(e) => handlePriceChange(form.id, e.target.value)}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                placeholder="قیمت فروش..."
+                              />
+                            </div>
+
+                            {/* تخفیف - فقط نمایشی */}
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">
+                                تخفیف
+                              </label>
+                              <input
+                                type="text"
+                                value={formatPrice(form.data.discount)}
+                                readOnly
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
+                              />
+                            </div>
+                          </div>
+
                           <div className="grid grid-cols-3 gap-2">
                             <div>
                               <input
@@ -751,48 +813,6 @@ function Sales({ products, setProducts, todaySales, setTodaySales, salesArchive,
                                 ));
                               }}
                               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              dir="ltr"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
-                              قیمت فروش (تومان)
-                            </label>
-                            <input
-                              type="text"
-                              name="price"
-                              value={form.data.price}
-                              onChange={(e) => {
-                                const newValue = e.target.value;
-                                if (!/^\d*\.?\d{0,2}$/.test(newValue)) return;
-                                setSaleForms(prev => prev.map(f =>
-                                  f.id === form.id ? { ...f, data: { ...f.data, price: newValue } } : f
-                                ));
-                              }}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              placeholder="تومان"
-                              dir="ltr"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
-                              تخفیف (تومان)
-                            </label>
-                            <input
-                              type="text"
-                              name="discount"
-                              value={form.data.discount}
-                              onChange={(e) => {
-                                const newValue = e.target.value;
-                                if (!/^\d*\.?\d{0,2}$/.test(newValue)) return;
-                                setSaleForms(prev => prev.map(f =>
-                                  f.id === form.id ? { ...f, data: { ...f.data, discount: newValue } } : f
-                                ));
-                              }}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              placeholder="تومان"
                               dir="ltr"
                             />
                           </div>

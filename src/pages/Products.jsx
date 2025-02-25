@@ -15,6 +15,7 @@ function Products({ products, setProducts }) {
       {
         id: Date.now(),
         purchasePrice: '',
+        salePrice: '',
         stock: '',
         isOriginal: true
       }
@@ -154,11 +155,12 @@ function Products({ products, setProducts }) {
 
       const productToAdd = {
         ...newProduct,
-        id: Date.now(), // اضافه کردن id منحصر به فرد
+        id: Date.now(),
         variants: newProduct.variants.map(variant => ({
           ...variant,
-          purchasePrice: parseFloat(variant.purchasePrice),
-          stock: parseFloat(variant.stock)
+          purchasePrice: parseFloat(variant.purchasePrice) || 0,
+          salePrice: parseFloat(variant.salePrice) || 0,
+          stock: parseFloat(variant.stock) || 0
         }))
       };
 
@@ -204,6 +206,7 @@ function Products({ products, setProducts }) {
         {
           id: Date.now(),
           purchasePrice: '',
+          salePrice: '',
           stock: '',
           isOriginal: false
         }
@@ -226,6 +229,7 @@ function Products({ products, setProducts }) {
 
   // فرمت کردن قیمت
   const formatPrice = (price) => {
+    if (!price) return '۰ تومان';  // اگر قیمت undefined یا خالی بود
     return toPersianNumber(price.toLocaleString()) + ' تومان';
   };
 
@@ -276,6 +280,22 @@ function Products({ products, setProducts }) {
     }
   };
 
+  const resetForm = () => {
+    setNewProduct({
+      name: '',
+      category: 'عمومی',
+      variants: [
+        {
+          id: Date.now(),
+          purchasePrice: '',
+          salePrice: '',
+          stock: '',
+          isOriginal: true
+        }
+      ]
+    });
+  };
+
   return (
     <div className="lg:p-6 p-4 max-w-7xl mx-auto mt-16 lg:mt-0">
       {/* هدر */}
@@ -285,18 +305,7 @@ function Products({ products, setProducts }) {
           <button
             onClick={() => {
               setEditingProduct(null);
-              setNewProduct({
-                name: '',
-                category: 'عمومی',
-                variants: [
-                  {
-                    id: Date.now(),
-                    purchasePrice: '',
-                    stock: '',
-                    isOriginal: true
-                  }
-                ]
-              });
+              resetForm();
               setShowAddForm(true);
             }}
             className="flex-1 sm:w-40 bg-blue-600 hover:bg-blue-700 text-white h-12 rounded-lg flex items-center justify-center gap-2 transition-colors"
@@ -360,30 +369,18 @@ function Products({ products, setProducts }) {
                 </div>
 
                 {newProduct.variants.map((variant, index) => (
-                  <div key={variant.id} className="p-4 border border-gray-200 rounded-lg">
-                    <div className="flex justify-between items-center mb-4">
-                      <span className="text-sm font-medium text-gray-700">
-                        {variant.isOriginal ? 'نرخ اصلی' : `نرخ ${index}`}
-                      </span>
-                      {!variant.isOriginal && (
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveVariant(variant.id)}
-                          className="text-red-500 hover:text-red-700"
-                        >
-                          <i className="fas fa-times"></i>
-                        </button>
-                      )}
+                  <div key={variant.id} className="bg-gray-50 p-4 rounded-lg">
+                    <div className="font-medium mb-2">
+                      {variant.isOriginal ? 'نرخ اصلی' : `نرخ ${index + 1}`}
                     </div>
-
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      {/* قیمت خرید */}
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
                           قیمت خرید
                         </label>
                         <input
                           type="text"
-                          name="price"
                           value={variant.purchasePrice}
                           onChange={(e) => {
                             const newValue = e.target.value.replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d));
@@ -397,10 +394,35 @@ function Products({ products, setProducts }) {
                             }));
                           }}
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          placeholder="تومان"
-                          dir="ltr"
+                          placeholder="قیمت خرید..."
                         />
                       </div>
+                      
+                      {/* قیمت فروش - اضافه شده */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          قیمت فروش
+                        </label>
+                        <input
+                          type="text"
+                          value={variant.salePrice}
+                          onChange={(e) => {
+                            const newValue = e.target.value.replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d));
+                            if (!/^\d*\.?\d{0,2}$/.test(newValue)) return;
+                            
+                            setNewProduct(prev => ({
+                              ...prev,
+                              variants: prev.variants.map(v =>
+                                v.id === variant.id ? { ...v, salePrice: newValue } : v
+                              )
+                            }));
+                          }}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder="قیمت فروش..."
+                        />
+                      </div>
+
+                      {/* موجودی */}
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
                           موجودی
@@ -420,6 +442,7 @@ function Products({ products, setProducts }) {
                             }));
                           }}
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder="موجودی..."
                         />
                       </div>
                     </div>
@@ -683,7 +706,7 @@ function Products({ products, setProducts }) {
                             <span>
                               {variant.isOriginal ? 'نرخ اصلی' : `نرخ ${index + 1}`}
                             </span>
-                            <span>{formatPrice(variant.purchasePrice)}</span>
+                            <span>{formatPrice(variant.purchasePrice || 0)}</span>
                           </div>
                           <div className="flex justify-between items-center mt-1">
                             <span>موجودی:</span>
@@ -721,7 +744,8 @@ function Products({ products, setProducts }) {
                         <div className="space-y-1">
                           {product.variants.map((variant, index) => (
                             <div key={variant.id} className={`${variant.isOriginal ? 'font-medium' : 'text-gray-500'}`}>
-                              {formatPrice(variant.purchasePrice)}
+                              <div>خرید: {formatPrice(variant.purchasePrice || 0)}</div>
+                              <div>فروش: {formatPrice(variant.salePrice || 0)}</div>
                               {variant.isOriginal && <span className="mr-1 text-xs text-blue-600">(نرخ اصلی)</span>}
                             </div>
                           ))}

@@ -9,9 +9,13 @@ export function useAuth() {
 export function AuthProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(null);
 
+  const updateCurrentUser = (user) => {
+    setCurrentUser(user);
+  };
+
   const value = {
     currentUser,
-    setCurrentUser
+    setCurrentUser: updateCurrentUser
   };
 
   return (
