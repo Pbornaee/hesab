@@ -50,12 +50,34 @@ function Dashboard({ todaySales = [], salesArchive = [] }) {
     return toPersianNumber(price.toLocaleString()) + ' تومان';
   };
 
+  // محاسبه کل فروش
+  const calculateTotalSales = () => {
+    return [...todaySales, ...salesArchive].reduce((total, sale) => {
+      if (!sale) return total;
+      return total + (sale.salePrice * sale.quantity);
+    }, 0);
+  };
+
+  // محاسبه سود - اختلاف قیمت فروش و قیمت خرید
+  const calculateProfit = (sale) => {
+    if (!sale) return 0;
+    // سود = قیمت فروش - قیمت خرید
+    return (sale.salePrice * sale.quantity) - sale.purchaseCost;
+  };
+
+  // محاسبه سود کل
+  const calculateTotalProfit = () => {
+    return [...todaySales, ...salesArchive].reduce((total, sale) => {
+      if (!sale) return total;
+      return total + calculateProfit(sale);
+    }, 0);
+  };
+
   // محاسبه فروش امروز
   const calculateTodaySales = () => {
     if (!todaySales?.length) return 0;
     return todaySales.reduce((total, sale) => {
-      const revenue = (sale.salePrice * sale.quantity) - (sale.discount || 0);
-      return total + revenue;
+      return total + (sale.salePrice * sale.quantity);
     }, 0);
   };
 
@@ -70,8 +92,7 @@ function Dashboard({ todaySales = [], salesArchive = [] }) {
     );
 
     return monthlySales.reduce((total, sale) => {
-      const revenue = (sale.salePrice * sale.quantity) - (sale.discount || 0);
-      return total + revenue;
+      return total + (sale.salePrice * sale.quantity);
     }, 0);
   };
 
@@ -92,32 +113,6 @@ function Dashboard({ todaySales = [], salesArchive = [] }) {
     );
 
     return monthlySales.reduce((total, sale) => total + sale.quantity, 0);
-  };
-
-  // اضافه کردن توابع محاسبه سود
-  const calculateTodayProfit = () => {
-    if (!todaySales?.length) return 0;
-    return todaySales.reduce((total, sale) => {
-      const revenue = (sale.salePrice * sale.quantity) - (sale.discount || 0);
-      const profit = revenue - sale.purchaseCost;
-      return total + profit;
-    }, 0);
-  };
-
-  const calculateMonthlyProfit = () => {
-    const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    
-    const allSales = [...(todaySales || []), ...(salesArchive || [])];
-    const monthlySales = allSales.filter(sale => 
-      new Date(sale.timestamp) >= startOfMonth
-    );
-
-    return monthlySales.reduce((total, sale) => {
-      const revenue = (sale.salePrice * sale.quantity) - (sale.discount || 0);
-      const profit = revenue - (sale.purchaseCost || 0);
-      return total + profit;
-    }, 0);
   };
 
   // محاسبه درصد تغییرات روزانه
@@ -212,12 +207,12 @@ function Dashboard({ todaySales = [], salesArchive = [] }) {
             <div>
               <h3 className="text-gray-400 text-sm mb-2">سود امروز</h3>
               <div className={`text-2xl font-bold mb-2 ${
-                calculateTodayProfit() >= 0 ? 'text-green-600' : 'text-red-600'
+                calculateTotalProfit() >= 0 ? 'text-green-600' : 'text-red-600'
               }`}>
-                {formatPrice(Math.abs(calculateTodayProfit()))}
+                {formatPrice(Math.abs(calculateTotalProfit()))}
               </div>
               <div className="text-sm text-gray-500">
-                {calculateTodayProfit() >= 0 ? 'سود' : 'ضرر'}
+                {calculateTotalProfit() >= 0 ? 'سود' : 'ضرر'}
               </div>
             </div>
             <div className="flex-1 mx-8">
@@ -355,12 +350,12 @@ function Dashboard({ todaySales = [], salesArchive = [] }) {
             <div>
               <h3 className="text-gray-400 text-sm mb-2">سود این ماه</h3>
               <div className={`text-2xl font-bold mb-2 ${
-                calculateMonthlyProfit() >= 0 ? 'text-green-600' : 'text-red-600'
+                calculateTotalProfit() >= 0 ? 'text-green-600' : 'text-red-600'
               }`}>
-                {formatPrice(Math.abs(calculateMonthlyProfit()))}
+                {formatPrice(Math.abs(calculateTotalProfit()))}
               </div>
               <div className="text-sm text-gray-500">
-                {calculateMonthlyProfit() >= 0 ? 'سود' : 'ضرر'}
+                {calculateTotalProfit() >= 0 ? 'سود' : 'ضرر'}
               </div>
             </div>
             <div className="flex-1 mx-8">

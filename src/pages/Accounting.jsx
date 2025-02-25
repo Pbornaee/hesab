@@ -3,6 +3,17 @@ import { useAuth } from '../contexts/AuthContext';
 import { db } from '../firebase';
 import { doc, getDoc } from 'firebase/firestore';
 
+const loadAccountingData = (sales, archive) => {
+  if (!Array.isArray(sales) || !Array.isArray(archive)) {
+    return [];
+  }
+  
+  return [...sales, ...archive].sort((a, b) => {
+    if (!a?.timestamp || !b?.timestamp) return 0;
+    return new Date(b.timestamp) - new Date(a.timestamp);
+  });
+};
+
 function Accounting({ products, todaySales, salesArchive, expenses, stockLogs }) {
   const { currentUser } = useAuth();
   const [selectedPeriod, setSelectedPeriod] = useState('today'); // today, week, month, year
@@ -28,11 +39,11 @@ function Accounting({ products, todaySales, salesArchive, expenses, stockLogs })
 
   // لود اطلاعات از فایربیس
   useEffect(() => {
-    const loadAccountingData = async () => {
-      if (!currentUser) return;
+    const loadUserAccountingData = async () => {
+      if (!currentUser?.id) return;
 
       try {
-        const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+        const userDoc = await getDoc(doc(db, 'users', currentUser.id));
         if (userDoc.exists()) {
           const data = userDoc.data();
           // اینجا می‌تونیم اطلاعات اضافی حسابداری رو از فایربیس بخونیم
@@ -43,7 +54,7 @@ function Accounting({ products, todaySales, salesArchive, expenses, stockLogs })
       }
     };
 
-    loadAccountingData();
+    loadUserAccountingData();
   }, [currentUser]);
 
   // محاسبه خلاصه آمار بر اساس دوره انتخاب شده
@@ -68,57 +79,60 @@ function Accounting({ products, todaySales, salesArchive, expenses, stockLogs })
         }
 
         // فیلتر کردن فروش‌ها بر اساس تاریخ
-        const filteredSales = [...todaySales, ...salesArchive].filter(sale => 
-          new Date(sale.timestamp) >= startDate
+        const filteredSales = loadAccountingData(todaySales, salesArchive).filter(sale => 
+          sale && sale.timestamp && new Date(sale.timestamp) >= startDate
         );
 
         // فیلتر کردن هزینه‌ها بر اساس تاریخ
         const filteredExpenses = expenses.filter(expense => 
-          new Date(expense.timestamp) >= startDate
+          expense && expense.timestamp && new Date(expense.timestamp) >= startDate
         );
 
-        // محاسبات آماری
-        const totalSales = filteredSales.reduce((total, sale) => 
-          total + ((sale.salePrice * sale.quantity) - (sale.discount || 0)), 0
-        );
+        // محاسبه کل فروش
+        const totalSales = filteredSales.reduce((total, sale) => {
+          if (!sale) return total;
+          return total + (sale.salePrice * sale.quantity);
+        }, 0);
 
+        // محاسبه کل هزینه‌ها
         const totalExpenses = filteredExpenses.reduce((total, expense) => 
-          total + expense.amount, 0
+          total + (expense?.amount || 0), 0
         );
 
+        // محاسبه سود - اختلاف قیمت فروش و قیمت خرید
+        const calculateProfit = (sale) => {
+          if (!sale) return 0;
+          // سود = قیمت فروش - قیمت خرید
+          return (sale.salePrice * sale.quantity) - sale.purchaseCost;
+        };
+
+        // محاسبه سود کل
         const totalProfit = filteredSales.reduce((total, sale) => {
-          const revenue = sale.price * sale.quantity;
-          
-          const product = products.find(p => p.id === sale.productId);
-          const purchasePrice = product?.variants.find(v => v.isOriginal)?.purchasePrice || 0;
-          
-          const purchaseCost = purchasePrice * sale.quantity;
-          
-          const profit = revenue - purchaseCost - (sale.discount || 0);
-          
-          return total + profit;
+          if (!sale) return total;
+          return total + calculateProfit(sale);
         }, 0);
 
         const finalProfit = totalProfit - totalExpenses;
 
-        const stockValue = products.reduce((total, product) => 
-          total + product.variants.reduce((variantTotal, variant) => 
-            variantTotal + (variant.purchasePrice * variant.stock), 0
-          ), 0
-        );
+        // محاسبه ارزش موجودی
+        const stockValue = products.reduce((total, product) => {
+          if (!product || !product.variants) return total;
+          return total + product.variants.reduce((variantTotal, variant) => 
+            variantTotal + ((variant?.purchasePrice || 0) * (variant?.stock || 0)), 0
+          );
+        }, 0);
 
-        const totalStock = products.reduce((total, product) => 
-          total + product.variants.reduce((variantTotal, variant) => 
-            variantTotal + variant.stock, 0
-          ), 0
-        );
+        // محاسبه کل موجودی
+        const totalStock = products.reduce((total, product) => {
+          if (!product || !product.variants) return total;
+          return total + product.variants.reduce((variantTotal, variant) => 
+            variantTotal + (variant?.stock || 0), 0
+          );
+        }, 0);
 
+        // محاسبه کل تخفیفات
         const totalDiscounts = filteredSales.reduce((total, sale) => 
-          total + (sale.discount || 0), 0
-        );
-
-        const totalPurchaseCost = filteredSales.reduce((total, sale) => 
-          total + (sale.purchaseCost || 0), 0
+          total + (sale?.discount || 0), 0
         );
 
         setSummary({
@@ -127,8 +141,7 @@ function Accounting({ products, todaySales, salesArchive, expenses, stockLogs })
           totalProfit: finalProfit,
           totalStock,
           stockValue,
-          totalDiscounts,
-          totalPurchaseCost
+          totalDiscounts
         });
 
       } catch (error) {
