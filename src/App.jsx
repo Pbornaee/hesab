@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, NavLink, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { db, auth } from './firebase';
 import { doc, getDoc, updateDoc, setDoc } from 'firebase/firestore';
@@ -15,27 +15,24 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import Tutorial from './pages/Tutorial';
 import People from './pages/People';
+import Invoice from './pages/Invoice';
 
 function PrivateRoute({ children }) {
   const { currentUser } = useAuth();
   const [hasValidSubscription, setHasValidSubscription] = useState(true);
   const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const checkSubscription = async () => {
       if (!currentUser?.id) return;
 
       try {
-        const userDoc = await getDoc(doc(db, 'userAuth', currentUser.id));
+        const userDoc = await getDoc(doc(db, 'users', currentUser.id));
         if (!userDoc.exists()) return;
 
-        const sub = userDoc.data().subscription;
-        if (!sub) {
-          setHasValidSubscription(false);
-          return;
-        }
-
-        setHasValidSubscription(sub.days > 0);
+        const remainingDays = userDoc.data().remainingDays;
+        setHasValidSubscription(remainingDays > 0);
       } catch (error) {
         console.error('خطا در بررسی اشتراک:', error);
       } finally {
@@ -45,6 +42,15 @@ function PrivateRoute({ children }) {
 
     checkSubscription();
   }, [currentUser]);
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      navigate('/login');
+    } catch (error) {
+      console.error('خطا در خروج از حساب:', error);
+    }
+  };
 
   if (!currentUser) {
     return <Navigate to="/login" />;
@@ -63,14 +69,23 @@ function PrivateRoute({ children }) {
           </div>
           <h1 className="text-2xl font-bold text-gray-800 mb-4">اشتراک شما به پایان رسیده است</h1>
           <p className="text-gray-600 mb-6">
-            لطفاً با پشتیبانی تماس بگیرید تا اشتراک شما تمدید شود.
+            برای ادامه استفاده از برنامه، لطفاً با پشتیبانی تماس بگیرید تا اشتراک شما تمدید شود.
           </p>
-          <button
-            onClick={() => signOut(auth)}
-            className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-          >
-            خروج از حساب
-          </button>
+          <div className="space-y-4">
+            <a 
+              href="tel:+989123456789"
+              className="block w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              <i className="fas fa-phone ml-2"></i>
+              تماس با پشتیبانی
+            </a>
+            <button
+              onClick={handleLogout}
+              className="w-full px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300"
+            >
+              خروج از حساب
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -267,6 +282,7 @@ function AppContent({ products, setProducts, todaySales, setTodaySales, salesArc
                 salesArchive={salesArchive}
                 setSalesArchive={updateSalesArchive}
                 people={people}
+                setPeople={updatePeople}
               />
             </PrivateRoute>
           } />
@@ -278,6 +294,7 @@ function AppContent({ products, setProducts, todaySales, setTodaySales, salesArc
                 stockLogs={stockLogs}
                 setStockLogs={updateStockLogs}
                 people={people}
+                setPeople={updatePeople}
               />
             </PrivateRoute>
           } />
@@ -286,6 +303,8 @@ function AppContent({ products, setProducts, todaySales, setTodaySales, salesArc
               <Expenses 
                 expenses={expenses}
                 setExpenses={updateExpenses}
+                people={people}
+                setPeople={updatePeople}
               />
             </PrivateRoute>
           } />
@@ -308,6 +327,21 @@ function AppContent({ products, setProducts, todaySales, setTodaySales, salesArc
           <Route path="/people" element={
             <PrivateRoute>
               <People 
+                people={people}
+                setPeople={updatePeople}
+                stockLogs={stockLogs}
+                setStockLogs={updateStockLogs}
+                todaySales={todaySales}
+                setTodaySales={updateTodaySales}
+                salesArchive={salesArchive}
+                setSalesArchive={updateSalesArchive}
+              />
+            </PrivateRoute>
+          } />
+          <Route path="/invoice" element={
+            <PrivateRoute>
+              <Invoice 
+                products={products}
                 people={people}
                 setPeople={updatePeople}
               />

@@ -1,8 +1,10 @@
 import { useState, useRef, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { debounce } from '../utils/debounce';
+import PersonSelect from '../components/PersonSelect';
+import { format } from 'date-fns-jalali';
 
-function Expenses({ expenses, setExpenses }) {
+function Expenses({ expenses, setExpenses, people, setPeople }) {
   const { currentUser } = useAuth();
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingExpense, setEditingExpense] = useState(null);
@@ -11,7 +13,11 @@ function Expenses({ expenses, setExpenses }) {
     title: '',
     amount: '',
     category: 'عمومی',
-    description: ''
+    description: '',
+    personName: '',
+    year: format(new Date(), 'yyyy'),
+    month: format(new Date(), 'MM'),
+    day: format(new Date(), 'dd')
   });
 
   // اضافه کردن state برای دسته‌بندی‌ها
@@ -31,7 +37,13 @@ function Expenses({ expenses, setExpenses }) {
 
   // تبدیل اعداد به فارسی
   const toPersianNumber = (num) => {
+    if (!num) return '';
     return num.toString().replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
+  };
+
+  // تبدیل اعداد به انگلیسی
+  const toEnglishNumber = (str) => {
+    return str.replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d));
   };
 
   // فرمت کردن قیمت
@@ -60,16 +72,21 @@ function Expenses({ expenses, setExpenses }) {
     try {
       setIsSubmitting(true);
       
-      if (!newExpense.title || !newExpense.amount) {
-        alert('لطفاً عنوان و مبلغ را وارد کنید');
+      if (!newExpense.title || !newExpense.amount || !newExpense.year || !newExpense.month || !newExpense.day) {
+        alert('لطفاً همه فیلدهای ضروری را پر کنید');
         return;
       }
 
       const expense = {
         id: editingExpense?.id || Date.now(),
         ...newExpense,
-        amount: parseFloat(newExpense.amount),
-        timestamp: new Date().toISOString()
+        amount: parseFloat(toEnglishNumber(newExpense.amount)),
+        timestamp: new Date(
+          parseInt(toEnglishNumber(newExpense.year)),
+          parseInt(toEnglishNumber(newExpense.month)) - 1,
+          parseInt(toEnglishNumber(newExpense.day))
+        ).toISOString(),
+        personName: newExpense.personName
       };
 
       if (editingExpense) {
@@ -82,7 +99,11 @@ function Expenses({ expenses, setExpenses }) {
         title: '',
         amount: '',
         category: 'عمومی',
-        description: ''
+        description: '',
+        personName: '',
+        year: format(new Date(), 'yyyy'),
+        month: format(new Date(), 'MM'),
+        day: format(new Date(), 'dd')
       });
       setEditingExpense(null);
       setShowAddForm(false);
@@ -105,7 +126,11 @@ function Expenses({ expenses, setExpenses }) {
       title: expense.title,
       amount: expense.amount.toString(),
       description: expense.description || '',
-      category: expense.category
+      category: expense.category,
+      personName: expense.personName,
+      year: format(new Date(expense.timestamp), 'yyyy'),
+      month: format(new Date(expense.timestamp), 'MM'),
+      day: format(new Date(expense.timestamp), 'dd')
     });
     setShowAddForm(true);
   };
@@ -145,7 +170,11 @@ function Expenses({ expenses, setExpenses }) {
               title: '',
               amount: '',
               category: 'عمومی',
-              description: ''
+              description: '',
+              personName: '',
+              year: format(new Date(), 'yyyy'),
+              month: format(new Date(), 'MM'),
+              day: format(new Date(), 'dd')
             });
             setShowAddForm(true);
           }}
@@ -242,6 +271,19 @@ function Expenses({ expenses, setExpenses }) {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
+                  نام شخص
+                </label>
+                <PersonSelect
+                  value={newExpense.personName}
+                  onChange={(value) => setNewExpense({ ...newExpense, personName: value })}
+                  people={people}
+                  placeholder="نام شخص را وارد کنید..."
+                  onAddPerson={(newPerson) => setPeople([...people, newPerson])}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
                   توضیحات (اختیاری)
                 </label>
                 <textarea
@@ -275,86 +317,92 @@ function Expenses({ expenses, setExpenses }) {
       )}
 
       {/* لیست هزینه‌ها */}
-      <div className="bg-white rounded-xl shadow-sm">
-        {expenses.length === 0 ? (
-          <div className="p-8 text-center text-gray-500">
-            <i className="fas fa-receipt text-4xl mb-4"></i>
-            <p>هنوز هزینه‌ای ثبت نشده است</p>
-          </div>
-        ) : (
-          <>
-            {/* نمایش موبایل */}
-            <div className="md:hidden">
-              {expenses.map((expense) => (
-                <div key={expense.id} className="p-4 border-b border-gray-200 last:border-b-0">
-                  <div className="flex justify-between items-start mb-2">
-                    <div>
-                      <h3 className="font-medium text-gray-900">{expense.title}</h3>
-                      <span className="text-sm text-gray-500">{expense.category}</span>
-                      {expense.description && (
-                        <p className="text-sm text-gray-500 mt-1">{expense.description}</p>
-                      )}
+      {expenses.length === 0 ? (
+        <div className="bg-white rounded-xl shadow-sm p-8 text-center text-gray-500">
+          <i className="fas fa-receipt text-4xl mb-4"></i>
+          <p>هنوز هزینه‌ای ثبت نشده است</p>
+        </div>
+      ) : (
+        <>
+          {/* نمایش موبایل */}
+          <div className="md:hidden bg-white rounded-xl shadow-sm divide-y">
+            {expenses.map((expense) => (
+              <div key={expense.id} className="p-4">
+                <div className="flex justify-between items-start mb-2">
+                  <div>
+                    <h3 className="font-medium text-gray-900">{expense.title}</h3>
+                    <div className="text-sm text-gray-500 mt-1">
+                      {toPersianNumber(format(new Date(expense.timestamp), 'yyyy/MM/dd'))}
                     </div>
-                    <div className="flex flex-col items-end">
-                      <span className="font-medium text-gray-900">{formatPrice(expense.amount)}</span>
-                      <div className="flex items-center gap-2 mt-2">
-                        <button
-                          onClick={() => handleEdit(expense)}
-                          className="text-blue-600 hover:text-blue-800"
-                        >
-                          <i className="fas fa-edit"></i>
-                        </button>
-                        <button
-                          onClick={() => handleDelete(expense.id)}
-                          className="text-red-600 hover:text-red-800"
-                        >
-                          <i className="fas fa-trash"></i>
-                        </button>
+                    {expense.personName && (
+                      <div className="text-sm text-gray-500 mt-1">
+                        <i className="fas fa-user ml-1"></i>
+                        {expense.personName}
                       </div>
-                    </div>
+                    )}
+                    {expense.description && (
+                      <p className="text-sm text-gray-500 mt-1">{expense.description}</p>
+                    )}
                   </div>
-                  <div className="text-xs text-gray-500">
-                    {new Date(expense.timestamp).toLocaleDateString('fa-IR')} - {' '}
-                    {new Date(expense.timestamp).toLocaleTimeString('fa-IR')}
+                  <div className="flex flex-col items-end">
+                    <span className="font-medium text-gray-900">{formatPrice(expense.amount)}</span>
+                    <div className="flex items-center gap-2 mt-2">
+                      <button
+                        onClick={() => handleEdit(expense)}
+                        className="text-blue-600 hover:text-blue-700"
+                      >
+                        <i className="fas fa-edit"></i>
+                      </button>
+                      <button
+                        onClick={() => handleDelete(expense.id)}
+                        className="text-red-600 hover:text-red-700"
+                      >
+                        <i className="fas fa-trash"></i>
+                      </button>
+                    </div>
                   </div>
                 </div>
-              ))}
-            </div>
+              </div>
+            ))}
+          </div>
 
-            {/* نمایش دسکتاپ */}
-            <div className="hidden md:block">
-              <table className="w-full">
-                <thead className="bg-gray-50">
+          {/* نمایش دسکتاپ */}
+          <div className="hidden md:block bg-white rounded-xl shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead>
                   <tr>
-                    <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">عنوان</th>
-                    <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">دسته‌بندی</th>
-                    <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">مبلغ</th>
-                    <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">توضیحات</th>
                     <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">تاریخ</th>
-                    <th className="px-4 py-3 text-right text-sm font-medium text-gray-500 w-20">عملیات</th>
+                    <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">عنوان</th>
+                    <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">مبلغ</th>
+                    <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">شخص</th>
+                    <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">توضیحات</th>
+                    <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">عملیات</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
                   {expenses.map((expense) => (
-                    <tr key={expense.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 text-sm text-gray-900">{expense.title}</td>
-                      <td className="px-4 py-3 text-sm text-gray-500">{expense.category}</td>
-                      <td className="px-4 py-3 text-sm text-gray-900">{formatPrice(expense.amount)}</td>
-                      <td className="px-4 py-3 text-sm text-gray-500">{expense.description}</td>
-                      <td className="px-4 py-3 text-sm text-gray-500">
-                        {new Date(expense.timestamp).toLocaleDateString('fa-IR')}
+                    <tr key={expense.id}>
+                      <td className="px-4 py-3 text-sm text-gray-900">
+                        {toPersianNumber(format(new Date(expense.timestamp), 'yyyy/MM/dd'))}
                       </td>
-                      <td className="px-4 py-3 text-sm">
-                        <div className="flex items-center gap-3">
+                      <td className="px-4 py-3 text-sm text-gray-900">{expense.title}</td>
+                      <td className="px-4 py-3 text-sm text-gray-900">{formatPrice(expense.amount)}</td>
+                      <td className="px-4 py-3 text-sm text-gray-900">
+                        {expense.personName || '---'}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-900">{expense.description || '---'}</td>
+                      <td className="px-4 py-3 text-sm text-gray-500">
+                        <div className="flex items-center gap-2">
                           <button
                             onClick={() => handleEdit(expense)}
-                            className="text-blue-600 hover:text-blue-800"
+                            className="text-blue-600 hover:text-blue-700"
                           >
                             <i className="fas fa-edit"></i>
                           </button>
                           <button
                             onClick={() => handleDelete(expense.id)}
-                            className="text-red-600 hover:text-red-800"
+                            className="text-red-600 hover:text-red-700"
                           >
                             <i className="fas fa-trash"></i>
                           </button>
@@ -365,9 +413,9 @@ function Expenses({ expenses, setExpenses }) {
                 </tbody>
               </table>
             </div>
-          </>
-        )}
-      </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
