@@ -3,11 +3,15 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { auth } from '../firebase';
 import { signOut } from 'firebase/auth';
 import SubscriptionStatus from './SubscriptionStatus';
+import { useAuth } from '../contexts/AuthContext';
+import LogoutConfirmDialog from './LogoutConfirmDialog';
 
 function Sidebar() {
   const [isOpen, setIsOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
+  const { currentUser } = useAuth();
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   const isActiveLink = (path) => {
     return location.pathname === path;
@@ -21,7 +25,8 @@ function Sidebar() {
     { path: '/expenses', icon: 'fas fa-money-bill', title: 'هزینه‌ها' },
     { path: '/accounting', icon: 'fas fa-calculator', title: 'حسابداری' },
     { path: '/people', icon: 'fas fa-users', title: 'اشخاص' },
-    { path: '/tutorial', icon: 'fas fa-question-circle', title: 'آموزش' }
+    { path: '/tutorial', icon: 'fas fa-question-circle', title: 'آموزش' },
+    { path: '/invoice', icon: 'fas fa-file-invoice', title: 'صورت حساب' }
   ];
 
   const handleLogout = async () => {
@@ -94,7 +99,7 @@ function Sidebar() {
 
           {/* دکمه خروج */}
           <button
-            onClick={handleLogout}
+            onClick={() => setShowLogoutConfirm(true)}
             className="w-full px-4 py-2 mt-4 text-right rounded-lg text-red-600 hover:bg-red-50 transition-colors duration-200"
           >
             <i className="fas fa-sign-out-alt ml-2"></i>
@@ -108,6 +113,14 @@ function Sidebar() {
         <div 
           className="fixed inset-0 bg-black bg-opacity-50 lg:hidden z-10"
           onClick={() => setIsOpen(false)}
+        />
+      )}
+
+      {/* دیالوگ تایید خروج */}
+      {showLogoutConfirm && (
+        <LogoutConfirmDialog
+          onConfirm={handleLogout}
+          onCancel={() => setShowLogoutConfirm(false)}
         />
       )}
     </>

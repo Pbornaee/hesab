@@ -6,7 +6,7 @@ import { format, parse, parseISO } from 'date-fns-jalali';
 import PersonSelect from '../components/PersonSelect';
 import PersonSearchSelect from '../components/PersonSearchSelect';
 
-function Sales({ products, setProducts, todaySales, setTodaySales, salesArchive, setSalesArchive, people }) {
+function Sales({ products, setProducts, todaySales, setTodaySales, salesArchive, setSalesArchive, people, setPeople }) {
   const { currentUser } = useAuth();
   const [showSaleForm, setShowSaleForm] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
@@ -74,7 +74,8 @@ function Sales({ products, setProducts, todaySales, setTodaySales, salesArchive,
   // محاسبه مجموع فروش امروز
   const calculateTotalSales = () => {
     return todaySales.reduce((total, sale) => {
-      return total + ((sale.salePrice * sale.quantity) - sale.discount);
+      // مجموع = قیمت فروش × تعداد
+      return total + (sale.salePrice * sale.quantity);
     }, 0);
   };
 
@@ -829,6 +830,7 @@ function Sales({ products, setProducts, todaySales, setTodaySales, salesArchive,
                                 ));
                               }}
                               people={people}
+                              onAddPerson={(newPerson) => setPeople([...people, newPerson])}
                               placeholder="نام خریدار را وارد کنید..."
                             />
                           </div>
@@ -881,20 +883,6 @@ function Sales({ products, setProducts, todaySales, setTodaySales, salesArchive,
                             <div>نام خریدار: {sale.customerName || '-'}</div>
                           </div>
                         </div>
-                        <div>
-                          <div className="text-xs text-gray-500 text-left mb-2">
-                            <div className="text-xs text-gray-500">
-                              {new Date(sale.timestamp).toLocaleDateString('fa-IR')} - {' '}
-                              {new Date(sale.timestamp).toLocaleTimeString('fa-IR', {
-                                hour: '2-digit',
-                                minute: '2-digit'
-                              })}
-                            </div>
-                          </div>
-                          <div className="text-sm font-medium text-gray-900 text-left">
-                            {formatPrice(sale.total)}
-                          </div>
-                        </div>
                       </div>
                       <div className="flex items-center gap-2 mt-2">
                         <button onClick={() => handleEdit(sale)} className="text-blue-600 hover:text-blue-700">
@@ -918,7 +906,6 @@ function Sales({ products, setProducts, todaySales, setTodaySales, salesArchive,
                         <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">قیمت فروش</th>
                         <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">تخفیف</th>
                         <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">نام خریدار</th>
-                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">مجموع</th>
                         <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">زمان</th>
                         <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">عملیات</th>
                       </tr>
@@ -931,7 +918,6 @@ function Sales({ products, setProducts, todaySales, setTodaySales, salesArchive,
                           <td className="px-4 py-3 text-sm text-gray-900">{formatPrice(sale.salePrice)}</td>
                           <td className="px-4 py-3 text-sm text-gray-900">{formatPrice(sale.discount)}</td>
                           <td className="px-4 py-3 text-sm text-gray-900">{sale.customerName || '-'}</td>
-                          <td className="px-4 py-3 text-sm text-gray-900">{formatPrice(sale.total)}</td>
                           <td className="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">
                             <div className="text-xs text-gray-500">
                               {new Date(sale.timestamp).toLocaleDateString('fa-IR')} - {' '}
@@ -1065,7 +1051,7 @@ function Sales({ products, setProducts, todaySales, setTodaySales, salesArchive,
             </div>
 
             {/* نمایش مجموع فروش */}
-            <div className="text-sm text-gray-500">
+            <div className="text-left text-sm font-medium text-gray-900">
               مجموع فروش: {formatPrice(
                 filteredArchive.reduce((total, sale) => total + sale.total, 0)
               )}
@@ -1092,9 +1078,6 @@ function Sales({ products, setProducts, todaySales, setTodaySales, salesArchive,
                           <div>تخفیف: {formatPrice(sale.discount)}</div>
                           <div>نام خریدار: {sale.customerName || '-'}</div>
                         </div>
-                      </div>
-                      <div className="text-sm font-medium text-gray-900">
-                        {formatPrice(sale.total)}
                       </div>
                     </div>
                     <div className="text-xs text-gray-500">
@@ -1133,7 +1116,6 @@ function Sales({ products, setProducts, todaySales, setTodaySales, salesArchive,
                         <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">تعداد</th>
                         <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">قیمت فروش</th>
                         <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">تخفیف</th>
-                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">مجموع</th>
                         <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">نام خریدار</th>
                       </tr>
                     </thead>
@@ -1151,7 +1133,6 @@ function Sales({ products, setProducts, todaySales, setTodaySales, salesArchive,
                           <td className="px-4 py-3 text-sm text-gray-900">{toPersianNumber(sale.quantity)}</td>
                           <td className="px-4 py-3 text-sm text-gray-900">{formatPrice(sale.salePrice)}</td>
                           <td className="px-4 py-3 text-sm text-gray-900">{formatPrice(sale.discount)}</td>
-                          <td className="px-4 py-3 text-sm text-gray-900">{formatPrice(sale.total)}</td>
                           <td className="px-4 py-3 text-sm text-gray-900">{sale.customerName || '-'}</td>
                           <td className="px-4 py-3 text-sm text-gray-500">
                             <div className="flex items-center gap-2">

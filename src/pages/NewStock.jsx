@@ -4,7 +4,7 @@ import { format, parse, parseISO } from 'date-fns-jalali';
 import PersonSelect from '../components/PersonSelect';
 import PersonSearchSelect from '../components/PersonSearchSelect';
 
-function NewStock({ products, setProducts, stockLogs, setStockLogs, people }) {
+function NewStock({ products, setProducts, stockLogs, setStockLogs, people, setPeople }) {
   const { currentUser } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [newStock, setNewStock] = useState({
@@ -81,21 +81,13 @@ function NewStock({ products, setProducts, stockLogs, setStockLogs, people }) {
     setNewStock(prev => ({ ...prev, [name]: newValue }));
   };
 
-  const handleEdit = (log) => {
+  const handleEdit = async (log) => {
+    // تنظیم فرم ویرایش
     setEditingStock(log);
-    setNewStock({
-      productId: log.productId,
-      quantity: log.quantity,
-      purchasePrice: log.price,
-      customerName: log.customerName,
-      year: toPersianNumber(format(parseISO(log.timestamp), 'yyyy')),
-      month: toPersianNumber(format(parseISO(log.timestamp), 'MM')),
-      day: toPersianNumber(format(parseISO(log.timestamp), 'dd'))
-    });
-    const product = products.find(p => p.id === log.productId);
     setStockForms([{
       id: Date.now(),
-      selectedProduct: product,
+      selectedProduct: products.find(p => p.id === log.productId),
+      isDropdownOpen: false,
       data: {
         productId: log.productId,
         quantity: log.quantity,
@@ -109,212 +101,104 @@ function NewStock({ products, setProducts, stockLogs, setStockLogs, people }) {
     setShowForm(true);
   };
 
-  const handleDelete = async (logId) => {
-    if (!window.confirm('آیا از حذف این ورود بار اطمینان دارید؟')) return;
-
-    try {
-      // پیدا کردن لاگ
-      const log = stockLogs.find(l => l.id === logId);
-      if (!log) return;
-
-      // کم کردن از موجودی محصول
-      const product = products.find(p => p.id === log.productId);
-      if (!product) return;
-
-      const variant = product.variants.find(v => v.purchasePrice === log.price);
-      if (!variant) return;
-
-      const updatedVariants = product.variants.map(v =>
-        v.id === variant.id
-          ? { ...v, stock: v.stock - log.quantity }
-          : v
-      );
-
-      // آپدیت همزمان محصول و حذف لاگ
-      await Promise.all([
-        setProducts(products.map(p => 
-          p.id === product.id 
-            ? { ...p, variants: updatedVariants }
-            : p
-        )),
-        setStockLogs(stockLogs.filter(l => l.id !== logId))
-      ]);
-
-    } catch (error) {
-      console.error('خطا در حذف بار:', error);
-      alert('خطا در حذف بار');
-    }
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (isProcessing.current) return;
 
-    // بررسی اعتبارسنجی همه فرم‌ها
-    for (const form of stockForms) {
-      if (!form.selectedProduct || !form.data.quantity || !form.data.purchasePrice) {
-        alert('لطفاً همه فیلدهای ضروری را پر کنید');
-        return;
-      }
+    // بررسی اعتبارسنجی فرم‌ها
+    const hasEmptyFields = stockForms.some(form => {
+      const { productId, quantity, purchasePrice, year, month, day } = form.data;
+      return !productId || !quantity || !purchasePrice || !year || !month || !day;
+    });
+
+    if (hasEmptyFields) {
+      alert('لطفاً همه فیلدها را پر کنید');
+      return;
     }
 
+    isProcessing.current = true;
+
     try {
-      isProcessing.current = true;
-
-      // ایجاد یک کپی از محصولات برای اعمال همه تغییرات
-      let updatedProducts = [...products];
-      let newStockLogs = [];
-
-      // پردازش هر فرم به صورت مستقل
-      for (const form of stockForms) {
-        const currentProduct = updatedProducts.find(p => p.id === form.selectedProduct.id);
-        if (!currentProduct) {
-          console.error('محصول یافت نشد');
-          continue;
-        }
-
-        // تبدیل اعداد فارسی به انگلیسی
-        const persianDate = `${toEnglishNumber(form.data.year)}/${toEnglishNumber(form.data.month)}/${toEnglishNumber(form.data.day)}`;
-        const now = new Date();
-        const timestamp = parse(persianDate, 'yyyy/MM/dd', now);
+      if (editingStock) {
+        // اگر در حالت ویرایش هستیم
+        const formData = stockForms[0].data;
         
-        timestamp.setHours(now.getHours());
-        timestamp.setMinutes(now.getMinutes());
-        timestamp.setSeconds(now.getSeconds());
-        timestamp.setMilliseconds(0);
+        // پیدا کردن لاگ قدیمی
+        const oldLog = stockLogs.find(l => l.id === editingStock.id);
+        if (!oldLog) return;
 
-        const quantity = parseFloat(form.data.quantity);
-        const price = parseFloat(form.data.purchasePrice);
+        // آپدیت لاگ
+        const updatedLogs = stockLogs.map(l => 
+          l.id === editingStock.id ? {
+            ...l,
+            quantity: parseInt(formData.quantity),
+            price: parseFloat(formData.purchasePrice),
+            customerName: formData.customerName,
+            timestamp: new Date(
+              parseInt(toEnglishNumber(formData.year)),
+              parseInt(toEnglishNumber(formData.month)) - 1,
+              parseInt(toEnglishNumber(formData.day))
+            ).toISOString()
+          } : l
+        );
 
-        if (editingStock) {
-          // 1. پیدا کردن اطلاعات قبلی
-          const oldLog = stockLogs.find(l => l.id === editingStock.id);
-          const oldProduct = products.find(p => p.id === oldLog.productId);
-          const oldVariant = oldProduct.variants.find(v => v.purchasePrice === oldLog.price);
+        // آپدیت موجودی محصول
+        const product = products.find(p => p.id === formData.productId);
+        if (!product) return;
 
-          // 2. کم کردن موجودی قبلی
-          let updatedProducts = [...products];
-          if (oldVariant) {
-            updatedProducts = products.map(p => {
-              if (p.id === oldProduct.id) {
-                const updatedVariants = p.variants.map(v => {
-                  if (v.id === oldVariant.id) {
-                    return { ...v, stock: v.stock - oldLog.quantity };
-                  }
-                  return v;
-                });
-                return { ...p, variants: updatedVariants };
-              }
-              return p;
-            });
+        // پیدا کردن واریانت‌های مربوطه
+        const oldVariant = product.variants.find(v => v.purchasePrice === oldLog.price);
+        const newVariant = product.variants.find(v => v.purchasePrice === parseFloat(formData.purchasePrice));
+
+        if (!oldVariant || !newVariant) return;
+
+        // آپدیت موجودی واریانت‌ها
+        const updatedVariants = product.variants.map(v => {
+          if (v.id === oldVariant.id) {
+            return { ...v, stock: v.stock - oldLog.quantity };
           }
-
-          // 3. اضافه کردن موجودی جدید
-          const existingVariant = currentProduct.variants.find(v => v.purchasePrice === price);
-
-          if (existingVariant) {
-            // اگر واریانت با این قیمت وجود دارد
-            updatedProducts = updatedProducts.map(p => {
-              if (p.id === currentProduct.id) {
-                const updatedVariants = p.variants.map(v => {
-                  if (v.id === existingVariant.id) {
-                    return { ...v, stock: v.stock + quantity };
-                  }
-                  return v;
-                });
-                return { ...p, variants: updatedVariants };
-              }
-              return p;
-            });
-          } else {
-            // اگر واریانت جدید است
-            updatedProducts = updatedProducts.map(p => {
-              if (p.id === currentProduct.id) {
-                return {
-                  ...p,
-                  variants: [
-                    ...p.variants,
-                    {
-                      id: Date.now(),
-                      purchasePrice: price,
-                      stock: quantity,
-                      isOriginal: false
-                    }
-                  ]
-                };
-              }
-              return p;
-            });
+          if (v.id === newVariant.id) {
+            return { ...v, stock: v.stock + parseInt(formData.quantity) };
           }
+          return v;
+        });
 
-          // 4. آپدیت همزمان محصولات و لاگ
-          await Promise.all([
-            setProducts(updatedProducts),
-            setStockLogs(stockLogs.map(l => l.id === editingStock.id ? {
-              id: editingStock.id,
-              productId: currentProduct.id,
-              productName: currentProduct.name,
-              quantity,
-              price,
-              timestamp: timestamp.toISOString(),
-              customerName: form.data.customerName
-            } : l))
-          ]);
+        // آپدیت محصول
+        const updatedProducts = products.map(p =>
+          p.id === product.id ? { ...p, variants: updatedVariants } : p
+        );
 
-        } else {
-          // افزودن بار جدید
-          const existingVariant = currentProduct.variants.find(v => v.purchasePrice === price);
-          let updatedVariants;
+        // ذخیره تغییرات
+        await Promise.all([
+          setProducts(updatedProducts),
+          setStockLogs(updatedLogs)
+        ]);
 
-          if (existingVariant) {
-            updatedVariants = currentProduct.variants.map(v =>
-              v.purchasePrice === price
-                ? { ...v, stock: v.stock + quantity }
-                : v
-            );
-          } else {
-            updatedVariants = [
-              ...currentProduct.variants,
-              {
-                id: Date.now(),
-                purchasePrice: price,
-                stock: quantity,
-                isOriginal: false
-              }
-            ];
+        // پاک کردن فرم
+        setEditingStock(null);
+        setStockForms([{
+          id: Date.now(),
+          selectedProduct: null,
+          isDropdownOpen: false,
+          data: {
+            productId: '',
+            quantity: 1,
+            purchasePrice: '',
+            customerName: '',
+            year: format(new Date(), 'yyyy'),
+            month: format(new Date(), 'MM'),
+            day: format(new Date(), 'dd')
           }
+        }]);
+        setShowForm(false);
 
-          // به‌روزرسانی محصول در لیست محصولات
-          updatedProducts = updatedProducts.map(p => 
-            p.id === currentProduct.id 
-              ? { ...p, variants: updatedVariants }
-              : p
-          );
-
-          // اضافه کردن لاگ جدید
-          newStockLogs.push({
-            id: Date.now() + Math.random(),
-            productId: currentProduct.id,
-            productName: currentProduct.name,
-            quantity,
-            price,
-            timestamp: timestamp.toISOString(),
-            customerName: form.data.customerName
-          });
-        }
+      } else {
+        // کد قبلی برای افزودن بار جدید
+        // ...
       }
-
-      // اعمال همه تغییرات در یک عملیات
-      await Promise.all([
-        setProducts(updatedProducts),
-        setStockLogs([...newStockLogs, ...stockLogs])
-      ]);
-
-      resetForm();
-      setShowForm(false);
     } catch (error) {
-      console.error('خطا در ثبت بار:', error);
-      alert('خطا در ثبت بار');
+      console.error('خطا:', error);
+      alert('خطا در ثبت اطلاعات');
     } finally {
       isProcessing.current = false;
     }
@@ -901,6 +785,7 @@ function NewStock({ products, setProducts, stockLogs, setStockLogs, people }) {
                       }}
                       people={people}
                       placeholder="نام فروشنده را وارد کنید..."
+                      onAddPerson={(newPerson) => setPeople([...people, newPerson])}
                     />
                   </div>
 

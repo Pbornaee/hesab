@@ -3,11 +3,20 @@ import { useAuth } from '../contexts/AuthContext';
 import { db } from '../firebase';
 import { doc, updateDoc } from 'firebase/firestore';
 
-function People({ people, setPeople }) {
+function People({ 
+  people, 
+  setPeople, 
+  stockLogs, 
+  setStockLogs,
+  todaySales,
+  setTodaySales,
+  salesArchive,
+  setSalesArchive
+}) {
   const { currentUser } = useAuth();
   const [newPerson, setNewPerson] = useState('');
   const [error, setError] = useState('');
-  const [editingId, setEditingId] = useState(null);
+  const [editingPerson, setEditingPerson] = useState(null);
   const [editName, setEditName] = useState('');
 
   const handleSubmit = async (e) => {
@@ -32,24 +41,52 @@ function People({ people, setPeople }) {
     }
   };
 
-  const handleEdit = async (id) => {
-    if (!editName.trim()) return;
+  const handleEdit = async (person) => {
+    setEditingPerson(person);
+    setEditName(person.name);
+  };
 
+  const handleSaveEdit = async () => {
     try {
-      const updatedPeople = people.map(person =>
-        person.id === id ? { ...person, name: editName.trim() } : person
+      if (!editName.trim() || editName === editingPerson.name) {
+        setEditingPerson(null);
+        return;
+      }
+
+      // آپدیت شخص
+      const updatedPeople = people.map(p =>
+        p.id === editingPerson.id ? { ...p, name: editName.trim() } : p
       );
 
-      await updateDoc(doc(db, 'users', currentUser.id), {
-        people: updatedPeople
-      });
+      // آپدیت لاگ‌های ورود بار
+      const updatedStockLogs = stockLogs.map(log =>
+        log.customerName === editingPerson.name ? { ...log, customerName: editName.trim() } : log
+      );
 
-      setPeople(updatedPeople);
-      setEditingId(null);
+      // آپدیت فروش‌های امروز
+      const updatedTodaySales = todaySales.map(sale =>
+        sale.customerName === editingPerson.name ? { ...sale, customerName: editName.trim() } : sale
+      );
+
+      // آپدیت آرشیو فروش‌ها
+      const updatedSalesArchive = salesArchive.map(sale =>
+        sale.customerName === editingPerson.name ? { ...sale, customerName: editName.trim() } : sale
+      );
+
+      // ذخیره همه تغییرات
+      await Promise.all([
+        setPeople(updatedPeople),
+        setStockLogs(updatedStockLogs),
+        setTodaySales(updatedTodaySales),
+        setSalesArchive(updatedSalesArchive)
+      ]);
+
+      setEditingPerson(null);
       setEditName('');
+
     } catch (error) {
       console.error('خطا در ویرایش شخص:', error);
-      setError('خطا در ویرایش شخص');
+      alert('خطا در ویرایش شخص');
     }
   };
 
@@ -109,23 +146,24 @@ function People({ people, setPeople }) {
           <div className="divide-y divide-gray-200">
             {people.map(person => (
               <div key={person.id} className="p-4 flex items-center justify-between">
-                {editingId === person.id ? (
+                {editingPerson?.id === person.id ? (
                   <div className="flex-1 flex gap-2">
                     <input
                       type="text"
                       value={editName}
-                      onChange={e => setEditName(e.target.value)}
+                      onChange={(e) => setEditName(e.target.value)}
                       className="flex-1 px-3 py-1 border border-gray-300 rounded-lg"
+                      autoFocus
                     />
                     <button
-                      onClick={() => handleEdit(person.id)}
+                      onClick={handleSaveEdit}
                       className="text-green-600 hover:text-green-700"
                     >
                       <i className="fas fa-check"></i>
                     </button>
                     <button
                       onClick={() => {
-                        setEditingId(null);
+                        setEditingPerson(null);
                         setEditName('');
                       }}
                       className="text-gray-600 hover:text-gray-700"
@@ -138,10 +176,7 @@ function People({ people, setPeople }) {
                     <span className="text-gray-900">{person.name}</span>
                     <div className="flex items-center gap-2">
                       <button
-                        onClick={() => {
-                          setEditingId(person.id);
-                          setEditName(person.name);
-                        }}
+                        onClick={() => handleEdit(person)}
                         className="text-blue-600 hover:text-blue-700"
                       >
                         <i className="fas fa-edit"></i>
