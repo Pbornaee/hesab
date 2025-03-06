@@ -22,6 +22,7 @@ function Invoice({ products, people, setPeople }) {
   const [invoices, setInvoices] = useState([]);
   const [showInvoiceLog, setShowInvoiceLog] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState(null);
+  const [editingInvoice, setEditingInvoice] = useState(null);
 
   // دریافت صورت حساب‌ها از دیتابیس
   useEffect(() => {
@@ -86,6 +87,23 @@ function Invoice({ products, people, setPeople }) {
     setItems(items.filter(item => item.id !== id));
   };
 
+  const handleEdit = (invoice) => {
+    setEditingInvoice(invoice);
+    setCustomerName(invoice.customerName);
+    setItems(invoice.items.map(item => ({
+      id: Date.now() + Math.random(),
+      productId: item.productId,
+      quantity: item.quantity,
+      price: item.price,
+      searchQuery: '',
+      isDropdownOpen: false,
+      selectedCategory: 'all',
+      isCategoryDropdownOpen: false
+    })));
+    setShowInvoiceLog(false);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   const handleSubmitInvoice = async () => {
     const hasEmptyFields = items.some(item => !item.productId || !item.quantity);
     if (hasEmptyFields) {
@@ -93,22 +111,30 @@ function Invoice({ products, people, setPeople }) {
       return;
     }
 
-    const newInvoice = {
-      id: Date.now(),
-      timestamp: new Date().toISOString(),
-      customerName: customerName || 'مشتری متفرقه',
-      items: items.map(item => ({
-        productId: item.productId,
-        productName: products.find(p => p.id === item.productId)?.name,
-        quantity: item.quantity,
-        price: products.find(p => p.id === item.productId)?.variants.find(v => v.isOriginal)?.salePrice
-      })),
-      total: calculateTotal()
-    };
-
     try {
-      // اضافه کردن صورت حساب جدید به آرایه موجود
-      const updatedInvoices = [newInvoice, ...invoices];
+      let updatedInvoices;
+      const newInvoice = {
+        id: editingInvoice ? editingInvoice.id : Date.now(),
+        timestamp: editingInvoice ? editingInvoice.timestamp : new Date().toISOString(),
+        customerName: customerName || 'مشتری متفرقه',
+        items: items.map(item => ({
+          productId: item.productId,
+          productName: products.find(p => p.id === item.productId)?.name,
+          quantity: item.quantity,
+          price: products.find(p => p.id === item.productId)?.variants.find(v => v.isOriginal)?.salePrice
+        })),
+        total: calculateTotal()
+      };
+
+      if (editingInvoice) {
+        // ویرایش صورت حساب موجود
+        updatedInvoices = invoices.map(inv => 
+          inv.id === editingInvoice.id ? newInvoice : inv
+        );
+      } else {
+        // اضافه کردن صورت حساب جدید
+        updatedInvoices = [newInvoice, ...invoices];
+      }
       
       // آپدیت در فایربیس
       const userRef = doc(db, 'users', currentUser.id);
@@ -118,6 +144,7 @@ function Invoice({ products, people, setPeople }) {
 
       // آپدیت state
       setInvoices(updatedInvoices);
+      setEditingInvoice(null);
 
       // پاک کردن فرم
       setCustomerName('');
@@ -281,7 +308,7 @@ function Invoice({ products, people, setPeople }) {
             className="w-full lg:flex-1 h-12 bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center justify-center gap-2 transition-colors text-base"
           >
             <i className="fas fa-save"></i>
-            ثبت صورت حساب
+            {editingInvoice ? 'ویرایش صورت حساب' : 'ثبت صورت حساب'}
           </button>
           <button
             onClick={() => setShowInvoiceLog(!showInvoiceLog)}
@@ -312,15 +339,26 @@ function Invoice({ products, people, setPeople }) {
                         {new Date(invoice.timestamp).toLocaleDateString('fa-IR')}
                       </div>
                     </div>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteInvoice(invoice.id);
-                      }}
-                      className="text-red-600 hover:text-red-700"
-                    >
-                      <i className="fas fa-trash"></i>
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteInvoice(invoice.id);
+                        }}
+                        className="text-red-600 hover:text-red-700"
+                      >
+                        <i className="fas fa-trash"></i>
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleEdit(invoice);
+                        }}
+                        className="text-blue-600 hover:text-blue-700 ml-2"
+                      >
+                        <i className="fas fa-edit"></i>
+                      </button>
+                    </div>
                   </div>
                   <div className="text-sm">
                     <div className="flex justify-between text-gray-500">
@@ -384,6 +422,15 @@ function Invoice({ products, people, setPeople }) {
                               className="text-red-600 hover:text-red-700"
                             >
                               <i className="fas fa-trash"></i>
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleEdit(invoice);
+                              }}
+                              className="text-blue-600 hover:text-blue-700"
+                            >
+                              <i className="fas fa-edit"></i>
                             </button>
                           </div>
                         </td>
